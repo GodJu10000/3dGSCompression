@@ -1,0 +1,218 @@
+2025-06-26 19:15:39,264 - INFO: args: Namespace(sh_degree=3, feat_dim=50, n_offsets=10, voxel_size=0.005, update_depth=3, update_init_factor=16, update_hierachy_factor=4, use_feat_bank=False, source_path='data/blending/playroom', model_path='outputs/blending/playroom/0.01', images='images', resolution=-1, white_background=False, data_device='cuda', eval=True, lod=0, iterations=30000, position_lr_init=0.0, position_lr_final=0.0, position_lr_delay_mult=0.01, position_lr_max_steps=30000, offset_lr_init=0.01, offset_lr_final=0.0001, offset_lr_delay_mult=0.01, offset_lr_max_steps=30000, mask_lr_init=0.01, mask_lr_final=3.2e-05, mask_lr_delay_mult=0.01, mask_lr_max_steps=30000, feature_lr=0.0075, opacity_lr=0.02, scaling_lr=0.007, rotation_lr=0.002, mlp_opacity_lr_init=0.002, mlp_opacity_lr_final=2e-05, mlp_opacity_lr_delay_mult=0.01, mlp_opacity_lr_max_steps=30000, mlp_cov_lr_init=0.004, mlp_cov_lr_final=0.004, mlp_cov_lr_delay_mult=0.01, mlp_cov_lr_max_steps=30000, mlp_color_lr_init=0.008, mlp_color_lr_final=5e-05, mlp_color_lr_delay_mult=0.01, mlp_color_lr_max_steps=30000, mlp_featurebank_lr_init=0.01, mlp_featurebank_lr_final=1e-05, mlp_featurebank_lr_delay_mult=0.01, mlp_featurebank_lr_max_steps=30000, encoding_xyz_lr_init=0.005, encoding_xyz_lr_final=1e-05, encoding_xyz_lr_delay_mult=0.33, encoding_xyz_lr_max_steps=30000, mlp_grid_lr_init=0.005, mlp_grid_lr_final=1e-05, mlp_grid_lr_delay_mult=0.01, mlp_grid_lr_max_steps=30000, mlp_deform_lr_init=0.005, mlp_deform_lr_final=0.0005, mlp_deform_lr_delay_mult=0.01, mlp_deform_lr_max_steps=30000, mlp_spatial_lr_init=0.005, mlp_spatial_lr_final=0.0005, mlp_spatial_lr_delay_mult=0.01, mlp_spatial_lr_max_steps=30000, mlp_param_lr_init=0.005, mlp_param_lr_final=0.0005, mlp_param_lr_delay_mult=0.01, mlp_param_lr_max_steps=30000, mlp_hyp_lr_init=0.005, mlp_hyp_lr_final=0.0005, mlp_hyp_lr_delay_mult=0.01, mlp_hyp_lr_max_steps=30000, mlp_ac_sp_lr_init=0.005, mlp_ac_sp_lr_final=1e-05, mlp_ac_sp_lr_delay_mult=0.01, mlp_ac_sp_lr_max_steps=30000, encoding_xyz_ac_lr_init=0.005, encoding_xyz_ac_lr_final=1e-05, encoding_xyz_ac_lr_delay_mult=0.33, encoding_xyz_ac_lr_max_steps=30000, mlp_VM_lr_init=0.008, mlp_VM_lr_final=5e-05, mlp_VM_lr_delay_mult=0.01, mlp_VM_lr_max_steps=30000, percent_dense=0.01, lambda_dssim=0.2, start_stat=500, update_from=1500, update_interval=100, update_until=15000, index_update_interval=200, min_opacity=0.005, success_threshold=0.8, densify_grad_threshold=0.0002, convert_SHs_python=False, compute_cov3D_python=False, debug=False, ip='127.0.0.1', port=6009, debug_from=-1, detect_anomaly=False, warmup=False, use_wandb=False, test_iterations=[30000], save_iterations=[30000, 30000], quiet=False, checkpoint_iterations=[], start_checkpoint=None, gpu='-1', log2=13, log2_2D=15, n_features=4, lmbda=0.01)
+2025-06-26 19:15:39,264 - INFO: Optimizing outputs/blending/playroom/0.01
+2025-06-26 19:24:02,170 - INFO: 
+----------------------------------------------------------------------------------------
+2025-06-26 19:24:02,171 - INFO: 
+-----[ITER 11000] bits info: bit_per_feat_param=0.9173582196235657, valid_num=177464, ttl_size_feat_MB=0.9703520482020167-----
+2025-06-26 19:24:02,171 - INFO: 
+-----[ITER 11000] bits info: bit_per_scaling_param=6.406348705291748, valid_num=177464, ttl_size_scaling_MB=0.8131715774316035-----
+2025-06-26 19:24:02,171 - INFO: 
+-----[ITER 11000] bits info: bit_per_offsets_param=1.5862606763839722, valid_num=177464, ttl_size_offsets_MB=1.0067373442905136-----
+2025-06-26 19:24:02,171 - INFO: 
+-----[ITER 11000] bits info: bit_per_param=1.5336490869522095, valid_num=177464, ttl_size_MB=2.790260969924134-----
+2025-06-26 19:24:02,171 - INFO: 
+-----[ITER 11000] bits info: bit_per_param_level_0=1.2700461149215698-----
+2025-06-26 19:24:02,171 - INFO: 
+-----[ITER 11000] bits info: bit_per_param_level_1=0.8274005055427551-----
+2025-06-26 19:24:02,172 - INFO: 
+-----[ITER 11000] bits info: bit_per_param_level_2=0.788364052772522-----
+2025-06-26 19:24:02,172 - INFO: 
+-----[ITER 11000] bits info: 1_rate_mask=0.9999989867210388, mask_numel=177464, mask_size_MB=3.845623268716736e-06-----
+2025-06-26 19:25:45,222 - INFO: 
+----------------------------------------------------------------------------------------
+2025-06-26 19:25:45,223 - INFO: 
+-----[ITER 12000] bits info: bit_per_feat_param=0.8205368518829346, valid_num=183521, ttl_size_feat_MB=0.8975609755182745-----
+2025-06-26 19:25:45,223 - INFO: 
+-----[ITER 12000] bits info: bit_per_scaling_param=5.523930549621582, valid_num=183521, ttl_size_scaling_MB=0.725095695302798-----
+2025-06-26 19:25:45,223 - INFO: 
+-----[ITER 12000] bits info: bit_per_offsets_param=1.3641685247421265, valid_num=183521, ttl_size_offsets_MB=0.8953341430277817-----
+2025-06-26 19:25:45,223 - INFO: 
+-----[ITER 12000] bits info: bit_per_param=1.3383195400238037, valid_num=183521, ttl_size_MB=2.5179908138488543-----
+2025-06-26 19:25:45,223 - INFO: 
+-----[ITER 12000] bits info: bit_per_param_level_0=1.160498023033142-----
+2025-06-26 19:25:45,223 - INFO: 
+-----[ITER 12000] bits info: bit_per_param_level_1=0.7171863913536072-----
+2025-06-26 19:25:45,223 - INFO: 
+-----[ITER 12000] bits info: bit_per_param_level_2=0.6961574554443359-----
+2025-06-26 19:25:45,224 - INFO: 
+-----[ITER 12000] bits info: 1_rate_mask=0.9999989867210388, mask_numel=183521, mask_size_MB=3.846678737318143e-06-----
+2025-06-26 19:27:27,501 - INFO: 
+----------------------------------------------------------------------------------------
+2025-06-26 19:27:27,501 - INFO: 
+-----[ITER 13000] bits info: bit_per_feat_param=0.7259821891784668, valid_num=189074, ttl_size_feat_MB=0.8181593205733861-----
+2025-06-26 19:27:27,502 - INFO: 
+-----[ITER 13000] bits info: bit_per_scaling_param=5.423291206359863, valid_num=189074, ttl_size_scaling_MB=0.7334256374010693-----
+2025-06-26 19:27:27,502 - INFO: 
+-----[ITER 13000] bits info: bit_per_offsets_param=1.242540955543518, valid_num=189074, ttl_size_offsets_MB=0.8401829789701765-----
+2025-06-26 19:27:27,502 - INFO: 
+-----[ITER 13000] bits info: bit_per_param=1.2338963747024536, valid_num=189074, ttl_size_MB=2.391767936944632-----
+2025-06-26 19:27:27,502 - INFO: 
+-----[ITER 13000] bits info: bit_per_param_level_0=0.9468061327934265-----
+2025-06-26 19:27:27,502 - INFO: 
+-----[ITER 13000] bits info: bit_per_param_level_1=0.6818901300430298-----
+2025-06-26 19:27:27,502 - INFO: 
+-----[ITER 13000] bits info: bit_per_param_level_2=0.6364538669586182-----
+2025-06-26 19:27:27,503 - INFO: 
+-----[ITER 13000] bits info: 1_rate_mask=0.9999989867210388, mask_numel=189074, mask_size_MB=3.84764643968083e-06-----
+2025-06-26 19:29:08,957 - INFO: 
+----------------------------------------------------------------------------------------
+2025-06-26 19:29:08,957 - INFO: 
+-----[ITER 14000] bits info: bit_per_feat_param=0.663498044013977, valid_num=194035, ttl_size_feat_MB=0.7673611817970993-----
+2025-06-26 19:29:08,957 - INFO: 
+-----[ITER 14000] bits info: bit_per_scaling_param=5.261824131011963, valid_num=194035, ttl_size_scaling_MB=0.7302604045349881-----
+2025-06-26 19:29:08,957 - INFO: 
+-----[ITER 14000] bits info: bit_per_offsets_param=1.1153531074523926, valid_num=194035, ttl_size_offsets_MB=0.7739694364232719-----
+2025-06-26 19:29:08,957 - INFO: 
+-----[ITER 14000] bits info: bit_per_param=1.1419353485107422, valid_num=194035, ttl_size_MB=2.2715910227553593-----
+2025-06-26 19:29:08,957 - INFO: 
+-----[ITER 14000] bits info: bit_per_param_level_0=0.9026179909706116-----
+2025-06-26 19:29:08,957 - INFO: 
+-----[ITER 14000] bits info: bit_per_param_level_1=0.6112995743751526-----
+2025-06-26 19:29:08,957 - INFO: 
+-----[ITER 14000] bits info: bit_per_param_level_2=0.5704076886177063-----
+2025-06-26 19:29:08,958 - INFO: 
+-----[ITER 14000] bits info: 1_rate_mask=0.9999989867210388, mask_numel=194035, mask_size_MB=3.848510914394865e-06-----
+2025-06-26 19:30:48,586 - INFO: 
+----------------------------------------------------------------------------------------
+2025-06-26 19:30:48,586 - INFO: 
+-----[ITER 15000] bits info: bit_per_feat_param=0.5926570892333984, valid_num=198418, ttl_size_feat_MB=0.7009138723105934-----
+2025-06-26 19:30:48,586 - INFO: 
+-----[ITER 15000] bits info: bit_per_scaling_param=5.148160457611084, valid_num=198418, ttl_size_scaling_MB=0.730624939211566-----
+2025-06-26 19:30:48,586 - INFO: 
+-----[ITER 15000] bits info: bit_per_offsets_param=1.0101003646850586, valid_num=198418, ttl_size_offsets_MB=0.7167652636530875-----
+2025-06-26 19:30:48,586 - INFO: 
+-----[ITER 15000] bits info: bit_per_param=1.0561027526855469, valid_num=198418, ttl_size_MB=2.148304075175247-----
+2025-06-26 19:30:48,586 - INFO: 
+-----[ITER 15000] bits info: bit_per_param_level_0=0.6805058717727661-----
+2025-06-26 19:30:48,586 - INFO: 
+-----[ITER 15000] bits info: bit_per_param_level_1=0.5873891711235046-----
+2025-06-26 19:30:48,586 - INFO: 
+-----[ITER 15000] bits info: bit_per_param_level_2=0.5491268038749695-----
+2025-06-26 19:30:48,587 - INFO: 
+-----[ITER 15000] bits info: 1_rate_mask=0.9999989867210388, mask_numel=198418, mask_size_MB=3.849274889944354e-06-----
+2025-06-26 19:32:25,515 - INFO: 
+----------------------------------------------------------------------------------------
+2025-06-26 19:32:25,515 - INFO: 
+-----[ITER 16000] bits info: bit_per_feat_param=0.5679569840431213, valid_num=198406, ttl_size_feat_MB=0.6716613374713631-----
+2025-06-26 19:32:25,515 - INFO: 
+-----[ITER 16000] bits info: bit_per_scaling_param=4.796457767486572, valid_num=198406, ttl_size_scaling_MB=0.6806702612514073-----
+2025-06-26 19:32:25,515 - INFO: 
+-----[ITER 16000] bits info: bit_per_offsets_param=0.8755136132240295, valid_num=198406, ttl_size_offsets_MB=0.6212251923513179-----
+2025-06-26 19:32:25,515 - INFO: 
+-----[ITER 16000] bits info: bit_per_param=0.9702559113502502, valid_num=198406, ttl_size_MB=1.9735567910740883-----
+2025-06-26 19:32:25,516 - INFO: 
+-----[ITER 16000] bits info: bit_per_param_level_0=0.6643458604812622-----
+2025-06-26 19:32:25,516 - INFO: 
+-----[ITER 16000] bits info: bit_per_param_level_1=0.5583949685096741-----
+2025-06-26 19:32:25,516 - INFO: 
+-----[ITER 16000] bits info: bit_per_param_level_2=0.5231521725654602-----
+2025-06-26 19:32:25,516 - INFO: 
+-----[ITER 16000] bits info: 1_rate_mask=0.999939501285553, mask_numel=198418, mask_size_MB=2.592450073279906e-05-----
+2025-06-26 19:34:02,467 - INFO: 
+----------------------------------------------------------------------------------------
+2025-06-26 19:34:02,467 - INFO: 
+-----[ITER 17000] bits info: bit_per_feat_param=0.5529365539550781, valid_num=197856, ttl_size_feat_MB=0.6520856310089584-----
+2025-06-26 19:34:02,467 - INFO: 
+-----[ITER 17000] bits info: bit_per_scaling_param=4.715846538543701, valid_num=197856, ttl_size_scaling_MB=0.6673754687762994-----
+2025-06-26 19:34:02,468 - INFO: 
+-----[ITER 17000] bits info: bit_per_offsets_param=0.7722918391227722, valid_num=197856, ttl_size_offsets_MB=0.5464645890765496-----
+2025-06-26 19:34:02,468 - INFO: 
+-----[ITER 17000] bits info: bit_per_param=0.9198914170265198, valid_num=197856, ttl_size_MB=1.8659256888618074-----
+2025-06-26 19:34:02,468 - INFO: 
+-----[ITER 17000] bits info: bit_per_param_level_0=0.6495087146759033-----
+2025-06-26 19:34:02,468 - INFO: 
+-----[ITER 17000] bits info: bit_per_param_level_1=0.5552164316177368-----
+2025-06-26 19:34:02,468 - INFO: 
+-----[ITER 17000] bits info: bit_per_param_level_2=0.5024820566177368-----
+2025-06-26 19:34:02,469 - INFO: 
+-----[ITER 17000] bits info: 1_rate_mask=0.9971675872802734, mask_numel=198418, mask_size_MB=0.0006673665484413505-----
+2025-06-26 19:35:40,433 - INFO: 
+----------------------------------------------------------------------------------------
+2025-06-26 19:35:40,434 - INFO: 
+-----[ITER 18000] bits info: bit_per_feat_param=0.556318998336792, valid_num=192723, ttl_size_feat_MB=0.639053978422055-----
+2025-06-26 19:35:40,434 - INFO: 
+-----[ITER 18000] bits info: bit_per_scaling_param=4.576760292053223, valid_num=192723, ttl_size_scaling_MB=0.6308891585579204-----
+2025-06-26 19:35:40,434 - INFO: 
+-----[ITER 18000] bits info: bit_per_offsets_param=0.7284824252128601, valid_num=192723, ttl_size_offsets_MB=0.5020927850042511-----
+2025-06-26 19:35:40,434 - INFO: 
+-----[ITER 18000] bits info: bit_per_param=0.8968718647956848, valid_num=192723, ttl_size_MB=1.7720359219842265-----
+2025-06-26 19:35:40,434 - INFO: 
+-----[ITER 18000] bits info: bit_per_param_level_0=0.651311457157135-----
+2025-06-26 19:35:40,434 - INFO: 
+-----[ITER 18000] bits info: bit_per_param_level_1=0.5584388375282288-----
+2025-06-26 19:35:40,434 - INFO: 
+-----[ITER 18000] bits info: bit_per_param_level_2=0.507089376449585-----
+2025-06-26 19:35:40,435 - INFO: 
+-----[ITER 18000] bits info: 1_rate_mask=0.9712979793548584, mask_numel=198418, mask_size_MB=0.004446851089596748-----
+2025-06-26 19:37:16,764 - INFO: 
+----------------------------------------------------------------------------------------
+2025-06-26 19:37:16,765 - INFO: 
+-----[ITER 19000] bits info: bit_per_feat_param=0.5443075299263, valid_num=179941, ttl_size_feat_MB=0.5837872102407715-----
+2025-06-26 19:37:16,765 - INFO: 
+-----[ITER 19000] bits info: bit_per_scaling_param=4.547782897949219, valid_num=179941, ttl_size_scaling_MB=0.5853170889186003-----
+2025-06-26 19:37:16,765 - INFO: 
+-----[ITER 19000] bits info: bit_per_offsets_param=0.7312036156654358, valid_num=179941, ttl_size_offsets_MB=0.4705435388319046-----
+2025-06-26 19:37:16,765 - INFO: 
+-----[ITER 19000] bits info: bit_per_param=0.8888160586357117, valid_num=179941, ttl_size_MB=1.6396478379912764-----
+2025-06-26 19:37:16,765 - INFO: 
+-----[ITER 19000] bits info: bit_per_param_level_0=0.6364432573318481-----
+2025-06-26 19:37:16,765 - INFO: 
+-----[ITER 19000] bits info: bit_per_param_level_1=0.5466588139533997-----
+2025-06-26 19:37:16,765 - INFO: 
+-----[ITER 19000] bits info: bit_per_param_level_2=0.49789607524871826-----
+2025-06-26 19:37:16,766 - INFO: 
+-----[ITER 19000] bits info: 1_rate_mask=0.9068784117698669, mask_numel=198418, mask_size_MB=0.01057219784706831-----
+2025-06-26 19:38:51,337 - INFO: 
+----------------------------------------------------------------------------------------
+2025-06-26 19:38:51,337 - INFO: 
+-----[ITER 20000] bits info: bit_per_feat_param=0.5472490787506104, valid_num=169282, ttl_size_feat_MB=0.5521739634815503-----
+2025-06-26 19:38:51,337 - INFO: 
+-----[ITER 20000] bits info: bit_per_scaling_param=4.582009792327881, valid_num=169282, ttl_size_scaling_MB=0.5547893869863856-----
+2025-06-26 19:38:51,337 - INFO: 
+-----[ITER 20000] bits info: bit_per_offsets_param=0.7500975131988525, valid_num=169282, ttl_size_offsets_MB=0.45410874091146525-----
+2025-06-26 19:38:51,337 - INFO: 
+-----[ITER 20000] bits info: bit_per_param=0.8995050191879272, valid_num=169282, ttl_size_MB=1.5610720913794012-----
+2025-06-26 19:38:51,337 - INFO: 
+-----[ITER 20000] bits info: bit_per_param_level_0=0.6386861801147461-----
+2025-06-26 19:38:51,338 - INFO: 
+-----[ITER 20000] bits info: bit_per_param_level_1=0.5482192039489746-----
+2025-06-26 19:38:51,338 - INFO: 
+-----[ITER 20000] bits info: bit_per_param_level_2=0.5010971426963806-----
+2025-06-26 19:38:51,338 - INFO: 
+-----[ITER 20000] bits info: 1_rate_mask=0.8531584739685059, mask_numel=198418, mask_size_MB=0.01424022950232029-----
+2025-06-26 19:40:26,396 - INFO: 
+----------------------------------------------------------------------------------------
+2025-06-26 19:40:26,397 - INFO: 
+-----[ITER 21000] bits info: bit_per_feat_param=0.5370814204216003, valid_num=164847, ttl_size_feat_MB=0.527717238141534-----
+2025-06-26 19:40:26,397 - INFO: 
+-----[ITER 21000] bits info: bit_per_scaling_param=4.4993672370910645, valid_num=164847, ttl_size_scaling_MB=0.5305103237147932-----
+2025-06-26 19:40:26,397 - INFO: 
+-----[ITER 21000] bits info: bit_per_offsets_param=0.7476231455802917, valid_num=164847, ttl_size_offsets_MB=0.44075286154559024-----
+2025-06-26 19:40:26,397 - INFO: 
+-----[ITER 21000] bits info: bit_per_param=0.886964738368988, valid_num=164847, ttl_size_MB=1.4989804234019175-----
+2025-06-26 19:40:26,397 - INFO: 
+-----[ITER 21000] bits info: bit_per_param_level_0=0.6165234446525574-----
+2025-06-26 19:40:26,397 - INFO: 
+-----[ITER 21000] bits info: bit_per_param_level_1=0.5318413376808167-----
+2025-06-26 19:40:26,397 - INFO: 
+-----[ITER 21000] bits info: bit_per_param_level_2=0.5011880397796631-----
+2025-06-26 19:40:26,398 - INFO: 
+-----[ITER 21000] bits info: 1_rate_mask=0.8308066725730896, mask_numel=198418, mask_size_MB=0.015516955405473709-----
+2025-06-26 19:42:00,476 - INFO: 
+----------------------------------------------------------------------------------------
+2025-06-26 19:42:00,477 - INFO: 
+-----[ITER 22000] bits info: bit_per_feat_param=0.5355156660079956, valid_num=162748, ttl_size_feat_MB=0.5194789386479215-----
+2025-06-26 19:42:00,477 - INFO: 
+-----[ITER 22000] bits info: bit_per_scaling_param=4.458341121673584, valid_num=162748, ttl_size_scaling_MB=0.5189796215558999-----
+2025-06-26 19:42:00,477 - INFO: 
+-----[ITER 22000] bits info: bit_per_offsets_param=0.7304307818412781, valid_num=162748, ttl_size_offsets_MB=0.42513423758663293-----
+2025-06-26 19:42:00,477 - INFO: 
+-----[ITER 22000] bits info: bit_per_param=0.8771948218345642, valid_num=162748, ttl_size_MB=1.4635927977904544-----
+2025-06-26 19:42:00,477 - INFO: 
+-----[ITER 22000] bits info: bit_per_param_level_0=0.6180686354637146-----
+2025-06-26 19:42:00,477 - INFO: 
+-----[ITER 22000] bits info: bit_per_param_level_1=0.5311159491539001-----
+2025-06-26 19:42:00,477 - INFO: 
+-----[ITER 22000] bits info: bit_per_param_level_2=0.49477601051330566-----
+2025-06-26 19:42:00,478 - INFO: 
+-----[ITER 22000] bits info: 1_rate_mask=0.8202279806137085, mask_numel=198418, mask_size_MB=0.016078054904937744-----

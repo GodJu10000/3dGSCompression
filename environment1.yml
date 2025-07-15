@@ -1,0 +1,9 @@
+name: HAC+++_env
+channels:
+  - pytorch
+  - pyg
+  - conda-forge
+  - defaults
+dependencies:
+  - pip:
+    - submodules/arithmetic

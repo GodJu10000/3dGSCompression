@@ -94,6 +94,8 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
         log2_hashmap_size=args_param.log2,
         log2_hashmap_size_2D=args_param.log2_2D,
         is_synthetic_nerf=is_synthetic_nerf,
+        source_path=dataset.source_path,
+        lmbda=args_param.lmbda
     )
     scene = Scene(dataset, gaussians, ply_path=ply_path)
     gaussians.update_anchor_bound()
@@ -112,6 +114,8 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
     first_iter += 1
     torch.cuda.synchronize(); t_start = time.time()
     log_time_sub = 0
+    # mask_weight = torch.zeros(5, dtype=torch.float, device="cuda")
+
     for iteration in range(first_iter, opt.iterations + 1):
 
         # network gui not available in scaffold-gs yet
@@ -146,6 +150,7 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
         if (iteration - 1) == debug_from:
             pipe.debug = True
 
+
         voxel_visible_mask = prefilter_voxel(viewpoint_cam, gaussians, pipe, background)
         retain_grad = (iteration < opt.update_until and iteration >= 0)
         render_pkg = render(viewpoint_cam, gaussians, pipe, background, visible_mask=voxel_visible_mask, retain_grad=retain_grad, step=iteration)
@@ -155,19 +160,29 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
         bit_per_feat_param = render_pkg["bit_per_feat_param"]
         bit_per_scaling_param = render_pkg["bit_per_scaling_param"]
         bit_per_offsets_param = render_pkg["bit_per_offsets_param"]
-
+        # bit_per_ac_feat = render_pkg["bit_per_ac_feat"]
+        # bit_per_nac_feat = render_pkg["bit_per_nac_feat"]
+        bit_feat_levels = render_pkg["bit_feat_levels"]
         if iteration % 1000 == 0 and bit_per_param is not None:
+            with torch.no_grad():
+                valid_num = gaussians.get_mask_anchor.to(torch.bool)[:, 0].sum().item()
 
-            ttl_size_feat_MB = bit_per_feat_param.item() * gaussians.get_anchor.shape[0] * gaussians.feat_dim / bit2MB_scale
-            ttl_size_scaling_MB = bit_per_scaling_param.item() * gaussians.get_anchor.shape[0] * 6 / bit2MB_scale
-            ttl_size_offsets_MB = bit_per_offsets_param.item() * gaussians.get_anchor.shape[0] * 3 * gaussians.n_offsets / bit2MB_scale
-            ttl_size_MB = ttl_size_feat_MB + ttl_size_scaling_MB + ttl_size_offsets_MB
+                ttl_size_feat_MB = bit_per_feat_param.item() * valid_num * gaussians.feat_dim / bit2MB_scale
+                ttl_size_scaling_MB = bit_per_scaling_param.item() * valid_num * 6 / bit2MB_scale
+                ttl_size_offsets_MB = bit_per_offsets_param.item() * valid_num * 3 * gaussians.n_offsets / bit2MB_scale
+                ttl_size_MB = ttl_size_feat_MB + ttl_size_scaling_MB + ttl_size_offsets_MB
 
             logger.info("\n----------------------------------------------------------------------------------------")
-            logger.info("\n-----[ITER {}] bits info: bit_per_feat_param={}, anchor_num={}, ttl_size_feat_MB={}-----".format(iteration, bit_per_feat_param.item(), gaussians.get_anchor.shape[0], ttl_size_feat_MB))
-            logger.info("\n-----[ITER {}] bits info: bit_per_scaling_param={}, anchor_num={}, ttl_size_scaling_MB={}-----".format(iteration, bit_per_scaling_param.item(), gaussians.get_anchor.shape[0], ttl_size_scaling_MB))
-            logger.info("\n-----[ITER {}] bits info: bit_per_offsets_param={}, anchor_num={}, ttl_size_offsets_MB={}-----".format(iteration, bit_per_offsets_param.item(), gaussians.get_anchor.shape[0], ttl_size_offsets_MB))
-            logger.info("\n-----[ITER {}] bits info: bit_per_param={}, anchor_num={}, ttl_size_MB={}-----".format(iteration, bit_per_param.item(), gaussians.get_anchor.shape[0], ttl_size_MB))
+            logger.info("\n-----[ITER {}] bits info: bit_per_feat_param={}, valid_num={}, ttl_size_feat_MB={}-----".format(iteration, bit_per_feat_param.item(), valid_num, ttl_size_feat_MB))
+            logger.info("\n-----[ITER {}] bits info: bit_per_scaling_param={}, valid_num={}, ttl_size_scaling_MB={}-----".format(iteration, bit_per_scaling_param.item(), valid_num, ttl_size_scaling_MB))
+            logger.info("\n-----[ITER {}] bits info: bit_per_offsets_param={}, valid_num={}, ttl_size_offsets_MB={}-----".format(iteration, bit_per_offsets_param.item(), valid_num, ttl_size_offsets_MB))
+            logger.info("\n-----[ITER {}] bits info: bit_per_param={}, valid_num={}, ttl_size_MB={}-----".format(iteration, bit_per_param.item(), valid_num, ttl_size_MB))
+            for i, bit_feat_level in enumerate(bit_feat_levels):
+                logger.info("\n-----[ITER {}] bits info: bit_per_param_level_{}={}-----".format(iteration, i, bit_feat_level.item()))
+
+            # if bit_per_ac_feat is not None :
+            #     logger.info("\n-----[ITER {}] bits info: bit_per_ac_feat={}, anchor_num={}-----".format(iteration, bit_per_ac_feat.item(), gaussians.get_anchor.shape[0]))
+            #     logger.info("\n-----[ITER {}] bits info: bit_per_nac_feat={}, anchor_num={}-----".format(iteration, bit_per_nac_feat.item(), gaussians.get_anchor.shape[0]))
             with torch.no_grad():
                 binary_grid_masks_anchor = gaussians.get_mask_anchor.float()
                 mask_1_rate, mask_size_bit, mask_size_MB, mask_numel = get_binary_vxl_size(binary_grid_masks_anchor + 0.0)  # [0, 1] -> [-1, 1]
@@ -180,10 +195,16 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
         scaling_reg = scaling.prod(dim=1).mean()
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * ssim_loss + 0.01*scaling_reg
 
+        # if iteration >=3000:
+        #     loss = loss + max(1e-3, 0.3 * args_param.lmbda) * torch.mean(torch.sigmoid(gaussians._mask[:, :10, :]))
+
         if bit_per_param is not None:
-            _, bit_hash_grid, MB_hash_grid, _ = get_binary_vxl_size((gaussians.get_encoding_params()+1)/2)
-            denom = gaussians._anchor.shape[0]*(gaussians.feat_dim+6+3*gaussians.n_offsets)
-            loss = loss + args_param.lmbda * (bit_per_param + bit_hash_grid / denom)
+            # _, bit_hash_grid, MB_hash_grid, _ = get_binary_vxl_size((gaussians.get_encoding_params()+1)/2)
+            # denom = gaussians._anchor.shape[0]*(gaussians.feat_dim+6+3*gaussians.n_offsets)
+            # loss = loss + args_param.lmbda * (bit_per_param + bit_hash_grid / denom)
+
+            loss = loss + args_param.lmbda * (bit_per_param)
+            # loss = loss + 5e-4 * torch.mean(torch.sigmoid(gaussians._mask[:, :10, :]))
 
         loss.backward()
 
@@ -200,6 +221,13 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
                 progress_bar.close()
 
             # Log and save
+            # prune and update index
+
+            if opt.update_until <= iteration <= opt.iterations and iteration % opt.index_update_interval == 0:
+            # if iteration <= opt.iterations and iteration % opt.index_update_interval == 1:
+            # if 10000 <= iteration <= opt.iterations and iteration % opt.update_interval == 0:
+                gaussians.knn_update_3()
+
             torch.cuda.synchronize(); t_start_log = time.time()
             training_report(tb_writer, dataset_name, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background), wandb, logger, args_param.model_path)
             if (iteration in saving_iterations):
@@ -217,15 +245,50 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
                     # densification
                     if iteration > opt.update_from and iteration % opt.update_interval == 0:
                         gaussians.adjust_anchor(check_interval=opt.update_interval, success_threshold=opt.success_threshold, grad_threshold=opt.densify_grad_threshold, min_opacity=opt.min_opacity)
+                        if iteration>=10_000:
+                            gaussians.knn_update_3()
+
             elif iteration == opt.update_until:
                 del gaussians.opacity_accum
                 del gaussians.offset_gradient_accum
                 del gaussians.offset_denom
                 torch.cuda.empty_cache()
 
+
+            # if iteration >= 0:
+            #     if mask_weight.shape[0] != gaussians.get_anchor.shape[0] or iteration == 0: #重算mask
+            #         tmp_viewpoint_stack = scene.getTrainCameras().copy()
+            #         anchor_visible_mask = torch.zeros(gaussians.get_anchor.shape[0], dtype=torch.float, device="cuda")
+            #         n = len(tmp_viewpoint_stack)
+                
+            #         for ii in range(n):
+            #             viewpoint_cam = tmp_viewpoint_stack.pop(0)
+                        
+            #             voxel_visible_mask = prefilter_voxel(viewpoint_cam, gaussians, pipe, background)
+            #             anchor_visible_mask += voxel_visible_mask.to(torch.float)
+            #         anchor_visible_mask = anchor_visible_mask.view(-1, 1)
+            #         # k = args_param.cam_mask
+            #         k = 1
+            #         p = anchor_visible_mask / torch.mean(anchor_visible_mask)
+            #         # the smaller the mask is, num of anchor is smaller 
+            #         p = p.repeat(1, 10).unsqueeze(-1)
+            #         mask_weight = k * p
+            #         gaussians.mask_weight = mask_weight
+                
+
             if iteration < opt.iterations:
                 gaussians.optimizer.step()
                 gaussians.optimizer.zero_grad(set_to_none = True)
+
+
+            # if 10_000 < iteration < opt.iterations:
+            #     gaussians.optimizer_feat_sp.step()
+            #     gaussians.optimizer_feat_sp.zero_grad(set_to_none = True)
+            #     gaussians.optimizer_feat_hyper.step()
+            #     gaussians.optimizer_feat_hyper.zero_grad(set_to_none = True)
+            #     gaussians.optimizer_triplane.step()
+            #     gaussians.optimizer_triplane.zero_grad(set_to_none = True)
+
             if (iteration in checkpoint_iterations):
                 logger.info("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
@@ -310,6 +373,7 @@ def training_report(tb_writer, dataset_name, iteration, Ll1, loss, l1_loss, elap
                         # image = torch.clamp(renderFunc(viewpoint, scene.gaussians, *renderArgs, visible_mask=voxel_visible_mask)["render"], 0.0, 1.0)
                         render_output = renderFunc(viewpoint, scene.gaussians, *renderArgs, visible_mask=voxel_visible_mask)
                         image = torch.clamp(render_output["render"], 0.0, 1.0)
+
                         time_sub = render_output["time_sub"]
                         torch.cuda.synchronize(); t_end = time.time()
                         t_list.append(t_end - t_start - time_sub)

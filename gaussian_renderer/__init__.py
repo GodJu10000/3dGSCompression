@@ -34,15 +34,21 @@ def generate_neural_gaussians(viewpoint_camera, pc : GaussianModel, visible_mask
     feat = pc._anchor_feat[visible_mask]
     grid_offsets = pc._offset[visible_mask]
     grid_scaling = pc.get_scaling[visible_mask]
-    binary_grid_masks = pc.get_mask[visible_mask]  # [N_vis, 10, 1]
+    binary_grid_masks = pc.get_mask[visible_mask]  # [N_vis, 10, 1] 
+
+
+    # bit_per_ac_feat = None
+    # bit_per_nac_feat = None
 
     bit_per_param = None
     bit_per_feat_param = None
     bit_per_scaling_param = None
     bit_per_offsets_param = None
+    bit_feat_levels = []
     Q_feat = 1
     Q_scaling = 0.001
     Q_offsets = 0.2
+
     if is_training:
         if step > 3000 and step <= 10000:
             # quantization
@@ -52,24 +58,66 @@ def generate_neural_gaussians(viewpoint_camera, pc : GaussianModel, visible_mask
 
         if step == 10000:
             pc.update_anchor_bound()
+            # pc.encoding_xyz_config()
+            pc.sp_config()
+            pc.ch_config()
+            pc.param_config()
+            # pc.VM_config()
+            pc.triplane_config()
+
+        # if step ==15_000:
+
 
         if step > 10000:
 
             # for rendering
-            feat_context_orig = pc.calc_interp_feat(anchor)
-            feat_context = pc.get_grid_mlp(feat_context_orig)
-            mean, scale, prob, mean_scaling, scale_scaling, mean_offsets, scale_offsets, Q_feat_adj, Q_scaling_adj, Q_offsets_adj = \
-                torch.split(feat_context, split_size_or_sections=[pc.feat_dim, pc.feat_dim,pc.feat_dim, 6, 6, 3*pc.n_offsets, 3*pc.n_offsets, 1, 1, 1], dim=-1)
+            # feat_context_orig = pc.calc_interp_feat(anchor)
+            # feat_context = pc.get_grid_mlp(feat_context_orig)
+            # mean, scale, prob, mean_scaling, scale_scaling, mean_offsets, scale_offsets, Q_feat_adj, Q_scaling_adj, Q_offsets_adj = \
+            #     torch.split(feat_context, split_size_or_sections=[pc.feat_dim, pc.feat_dim, pc.feat_dim, 6, 6, 3*pc.n_offsets, 3*pc.n_offsets, 1, 1, 1], dim=-1)
+            hyper_prior = pc.query_triplane(anchor)
+
+
+            # plane_context = pc.query_triplane(anchor)
+            
+
+            # feat_hyper, mean_scaling, scale_scaling, mean_offsets, scale_offsets, Q_feat_adj, Q_scaling_adj, Q_offsets_adj = \
+            #     torch.split(hyper_prior, split_size_or_sections=[pc.feat_dim*2, 6, 6, 3*pc.n_offsets, 3*pc.n_offsets, 1, 1, 1], dim=-1)
+            
+            # feat_hyper, Q_feat_adj = torch.split(feat_context, split_size_or_sections=[pc.feat_dim*2, 1], dim=-1)
+            # mean_scaling, scale_scaling, mean_offsets, scale_offsets, Q_scaling_adj, Q_offsets_adj = \
+            #     torch.split(plane_context, split_size_or_sections=[6, 6, 3*pc.n_offsets, 3*pc.n_offsets, 1, 1], dim=-1)
+
+            mean_scaling, scale_scaling, mean_offsets, scale_offsets, Q_scaling_adj, Q_offsets_adj = \
+                torch.split(pc.mlp_VM(hyper_prior), split_size_or_sections=[6, 6, 3*pc.n_offsets, 3*pc.n_offsets, 1, 1], dim=-1)
+            Q_feat_adj = pc.mlp_feat_Q(hyper_prior)
+
+            Q_feat_adj = Q_feat_adj.contiguous().repeat(1, 50)
+            Q_scaling_adj = Q_scaling_adj.contiguous().repeat(1, mean_scaling.shape[-1])
+            Q_offsets_adj = Q_offsets_adj.contiguous().repeat(1, mean_offsets.shape[-1])
 
             Q_feat = Q_feat * (1 + torch.tanh(Q_feat_adj))
             Q_scaling = Q_scaling * (1 + torch.tanh(Q_scaling_adj))
-            Q_offsets = Q_offsets * (1 + torch.tanh(Q_offsets_adj))
+            Q_offsets = Q_offsets * (1 + torch.tanh(Q_offsets_adj)).view(-1, pc.n_offsets, 3)
             feat = feat + torch.empty_like(feat).uniform_(-0.5, 0.5) * Q_feat
             grid_scaling = grid_scaling + torch.empty_like(grid_scaling).uniform_(-0.5, 0.5) * Q_scaling
-            grid_offsets = grid_offsets + torch.empty_like(grid_offsets).uniform_(-0.5, 0.5) * Q_offsets.unsqueeze(1)
+            grid_offsets = grid_offsets + torch.empty_like(grid_offsets).uniform_(-0.5, 0.5) * Q_offsets
+            grid_offsets = grid_offsets.view(-1, 3 * pc.n_offsets)
 
-            # for entropy
+            # if step % 10 ==0:
+            #     print("visible num:", anchor.shape[0])
+            #     anchor_coords = pc.spatial_coords[pc.spatial_anchor_sign]
+            #     nonanchor_coords = pc.spatial_coords[~pc.spatial_anchor_sign]
+            #     # anchor_coords = pc.get_anchor[pc.spatial_anchor_sign]
+            #     # nonanchor_coords = pc.get_anchor[~pc.spatial_anchor_sign]
+            #     anchor_per_nonanchor, average_per_kernel = pc.spatial_efficiency(anchor_coords, nonanchor_coords)
+            #     print(torch.min(anchor_per_nonanchor))
+            #     print("spatial_efficiency:", average_per_kernel) 
+
+            # for entropy   
             choose_idx = torch.rand_like(pc.get_anchor[:, 0]) <= 0.05
+            choose_idx =  choose_idx & pc.get_mask_anchor.to(torch.bool)[:, 0]
+
             anchor_chosen = pc.get_anchor[choose_idx]
             feat_chosen = pc._anchor_feat[choose_idx]
             grid_offsets_chosen = pc._offset[choose_idx]
@@ -77,35 +125,219 @@ def generate_neural_gaussians(viewpoint_camera, pc : GaussianModel, visible_mask
             binary_grid_masks_chosen = pc.get_mask[choose_idx]  # [N_vis, 10, 1]
             mask_anchor_chosen = pc.get_mask_anchor[choose_idx]  # [N_vis, 1]
 
-            feat_context_orig = pc.calc_interp_feat(anchor_chosen)
-            feat_context = pc.get_grid_mlp(feat_context_orig)
-            mean, scale, prob, mean_scaling, scale_scaling, mean_offsets, scale_offsets, Q_feat_adj, Q_scaling_adj, Q_offsets_adj = \
-                torch.split(feat_context, split_size_or_sections=[pc.feat_dim, pc.feat_dim, pc.feat_dim, 6, 6, 3*pc.n_offsets, 3*pc.n_offsets, 1, 1, 1], dim=-1)
+            # feat_context_orig = pc.calc_interp_feat(anchor_chosen)
+            # feat_context = pc.get_grid_mlp(feat_context_orig)
+            hyper_prior = pc.query_triplane(anchor_chosen)
+            # mean, scale, prob, mean_scaling, scale_scaling, mean_offsets, scale_offsets, Q_feat_adj, Q_scaling_adj, Q_offsets_adj = \
+            #     torch.split(feat_context, split_size_or_sections=[pc.feat_dim, pc.feat_dim, pc.feat_dim, 6, 6, 3*pc.n_offsets, 3*pc.n_offsets, 1, 1, 1], dim=-1)
+
+            # plane_context = pc.query_triplane(anchor_chosen)
+            # feat_hyper, mean_scaling, scale_scaling, mean_offsets, scale_offsets, Q_feat_adj, Q_scaling_adj, Q_offsets_adj = \
+            #     torch.split(feat_context, split_size_or_sections=[pc.feat_dim*2, 6, 6, 3*pc.n_offsets, 3*pc.n_offsets, 1, 1, 1], dim=-1)
+
+            # feat_hyper, Q_feat_adj = torch.split(feat_context, split_size_or_sections=[pc.feat_dim*2, 1], dim=-1)
+            # mean_scaling, scale_scaling, mean_offsets, scale_offsets, Q_scaling_adj, Q_offsets_adj = \
+            #     torch.split(plane_context, split_size_or_sections=[6, 6, 3*pc.n_offsets, 3*pc.n_offsets, 1, 1], dim=-1)        
+
+            mean_scaling, scale_scaling, mean_offsets, scale_offsets, Q_scaling_adj, Q_offsets_adj = \
+                torch.split(pc.mlp_VM(hyper_prior), split_size_or_sections=[6, 6, 3*pc.n_offsets, 3*pc.n_offsets, 1, 1, 1], dim=-1)
+            Q_feat_adj = pc.mlp_feat_Q(hyper_prior)
 
             Q_feat = 1
             Q_scaling = 0.001
             Q_offsets = 0.2
-            Q_feat_adj = Q_feat_adj.contiguous().repeat(1, mean.shape[-1])
+            Q_feat_adj = Q_feat_adj.contiguous().repeat(1, 50)
             Q_scaling_adj = Q_scaling_adj.contiguous().repeat(1, mean_scaling.shape[-1])
             Q_offsets_adj = Q_offsets_adj.contiguous().repeat(1, mean_offsets.shape[-1])
             Q_feat = Q_feat * (1 + torch.tanh(Q_feat_adj))
             Q_scaling = Q_scaling * (1 + torch.tanh(Q_scaling_adj))
             Q_offsets = Q_offsets * (1 + torch.tanh(Q_offsets_adj)).view(-1, pc.n_offsets, 3)
             feat_chosen = feat_chosen + torch.empty_like(feat_chosen).uniform_(-0.5, 0.5) * Q_feat
-            mean_adj, scale_adj, prob_adj = pc.get_deform_mlp.forward(feat_chosen, torch.cat([mean, scale, prob], dim=-1))
-            probs = torch.stack([prob, prob_adj], dim=-1)
-            probs = torch.softmax(probs, dim=-1)
+
+            # mean_adj, scale_adj, prob_adj = pc.get_deform_mlp.forward(feat_chosen, torch.cat([mean, scale, prob], dim=-1).contiguous())
+            # mean_adj, scale_adj, prob_adj = pc.get_deform_mlp.forward(feat_chosen)
+            # ch_ctx = pc.get_deform_mlp.forward(feat_chosen)
+
+            # mean, scale = pc.get_param_mlp(hyper_prior, ch_ctx)
+            # bit_feat = pc.entropy_gaussian(feat_chosen, mean, scale, Q_feat, pc._anchor_feat.mean())
+
+            # sp_anchor_sign = pc.spatial_anchor_sign[choose_idx]  
+            # nac_choose_idx = choose_idx[~pc.spatial_anchor_sign]
+            # knn_indices = pc.knn_indices[nac_choose_idx]
+            # nac_sp_feat = pc._anchor_feat[knn_indices]
+            # ac_coords = anchor_chosen[sp_anchor_sign]
+            # ac_sp_ctx_side = pc.calc_interp_feat(ac_coords, ac_sp=True)
+            # sp_ctx = torch.zeros((feat_chosen.shape[0], 50*2), device='cuda', dtype=torch.float32)
+            # sp_ctx[sp_anchor_sign] = pc.get_ac_sp_mlp(ac_sp_ctx_side)
+            # sp_ctx[~sp_anchor_sign] = pc.get_spatial_mlp.forward(nac_sp_feat)
+            # mean, scale = pc.get_param_mlp(feat_hyper, ch_ctx, sp_ctx)
+            # bit_feat = pc.entropy_gaussian(feat_chosen, mean, scale, Q_feat, pc._anchor_feat.mean())
+
+            # knn_indices = pc.knn_indices[choose_idx]
+            # sp_feat = pc._anchor_feat[pc.refer_mask][knn_indices]
+            # sp_ctx = pc.get_spatial_mlp.forward(sp_feat)
+            # # base_indices = pc.base_mask[choose_idx]
+            # # base_pts = anchor_chosen[base_indices]
+            # # sp_ctx[base_indices, ...] = pc.mlp_base_sp(base_pts)
+            # means, scales = pc.get_param_mlp(feat_hyper, ch_ctx, sp_ctx)
+            # bit_feat = pc.entropy_gaussian(feat_chosen, means, scales, Q_feat, pc._anchor_feat.mean())
+
+            # choose_base_idx = pc.level_0_mask[choose_idx]
+            # non_base_choose_idx = choose_idx & (~pc.level_0_mask)
+            # knn_indices = pc.knn_indices[non_base_choose_idx]
+            # sp_feat = pc._anchor_feat[pc.refer_mask][knn_indices]
+            # sp_ctx = torch.zeros((feat_chosen.shape[0], 50*2), device='cuda', dtype=torch.float32)
+            # sp_ctx[~choose_base_idx, ...] = pc.get_spatial_mlp.forward(sp_feat)
+            # mask_list = [getattr(pc, f"level_{i}_mask") for i in range(pc.level_num)]
+            # means, scales = pc.get_param_mlp(hyper_prior, ch_ctx, sp_ctx, mask_list, choose_idx)
+            # bit_feat = pc.entropy_gaussian(feat_chosen, means, scales, Q_feat, pc._anchor_feat.mean())
+
+
+
+            mask_list = [getattr(pc, f"level_{i}_mask") for i in range(pc.level_num)]
+            knn_indices = pc.knn_indices[choose_idx]
+            sp_feat = pc._anchor_feat[pc.refer_mask][pc.morton_indices][knn_indices]  # (N, knn, feat.shape[-1])
+            sp_anchor = pc._anchor_feat[pc.refer_mask][pc.morton_indices][knn_indices].view(-1, 3)  # (N*knn, anchor.shape[-1])
+            Q_feat_sp_adj = pc.mlp_feat_Q(pc.query_triplane(sp_anchor)).view(-1, 2, 1)  #(N, knn, 1)
+            Q_feat_sp = 1
+            Q_feat_sp = Q_feat_sp * (1 + torch.tanh(Q_feat_sp_adj))
+            sp_feat = sp_feat + torch.empty_like(sp_feat).uniform_(-0.5, 0.5) * Q_feat_sp
+
+            sp_ctx = pc.get_spatial_mlp.forward(sp_feat, mask_list, choose_idx)
+            # sp_ctx = pc.get_spatial_mlp.forward(sp_feat)
+            ch_ctx = pc.get_deform_mlp.forward(feat_chosen, mask_list, choose_idx)
+            # hyper_prior = pc.calc_interp_feat(anchor_chosen)
+            means, scales = pc.get_param_mlp(hyper_prior, ch_ctx, sp_ctx, mask_list, choose_idx)
+            # means, scales = pc.get_param_mlp(hyper_prior, ch_ctx, sp_ctx)
+            bit_feat = pc.entropy_gaussian(feat_chosen, means, scales, Q_feat, pc._anchor_feat.mean())
+
+
+            with torch.no_grad():
+                for level_mask in mask_list:
+                    level_mask_choose = level_mask[choose_idx]
+                    bit_feat_level = bit_feat[level_mask_choose]
+                    bit_per_feat_param_level = torch.sum(bit_feat_level) / bit_feat_level.numel()
+                    bit_feat_levels.append(bit_per_feat_param_level)
+
+            # knn_indices = pc.knn_indices[choose_idx]
+            # sp_feat = pc._anchor_feat[knn_indices]
+            # sp_ctx = pc.get_spatial_mlp.forward(sp_feat)
+            # means, scales = pc.get_param_mlp(hyper_prior, ch_ctx, sp_ctx)
+            # bit_feat = pc.entropy_gaussian(feat_chosen, means, scales, Q_feat, pc._anchor_feat.mean())
+
+            # if step<=15_000:
+            #     # probs = torch.stack([prob, prob_adj], dim=-1)
+            #     # probs = torch.softmax(probs, dim=-1)
+            #     # bit_feat = pc.EG_mix_prob_2.forward(feat_chosen,
+            #     #                                     mean, mean_adj,
+            #     #                                     scale, scale_adj,
+            #     #                                     probs[..., 0], probs[..., 1],
+            #     #                                     Q=Q_feat, x_mean=pc._anchor_feat.mean())
+
+            #     # sp_ctx = torch.zeros((feat_chosen.shape[0], 50*2), device='cuda', dtype=torch.float32)
+            #     # mean, scale = pc.get_param_mlp(feat_hyper, ch_ctx, sp_ctx)
+            #     # mean, scale = pc.get_param_mlp(feat_hyper, ch_ctx)
+            #     # bit_feat = pc.entropy_gaussian(feat_chosen, mean, scale, Q_feat, pc._anchor_feat.mean())
+
+            #     knn_indices = pc.knn_indices[choose_idx]
+            #     sp_feat = pc._anchor_feat[knn_indices]
+            #     sp_ctx = pc.get_spatial_mlp.forward(sp_feat)
+            #     means, scales = pc.get_param_mlp(feat_hyper, ch_ctx, sp_ctx)
+            #     bit_feat = pc.entropy_gaussian(feat_chosen, means, scales, Q_feat, pc._anchor_feat.mean())
+
+            # else:
+
+
+            #     # sp_anchor_sign = pc.spatial_anchor_sign[choose_idx]
+            #     # # coords = pc.spatial_coords[visible_mask][choose_idx] consider relative coords
+            #     # nac_choose_idx = choose_idx[~pc.spatial_anchor_sign]
+            #     # knn_indices = pc.knn_indices[nac_choose_idx]
+            #     # nac_sp_feat = pc._anchor_feat[knn_indices]
+
+            #     # mean_sp, scale_sp, prob_sp = pc.get_spatial_mlp.forward(nac_sp_feat)
+
+            #     # probs_ac = torch.stack([prob[sp_anchor_sign], prob_adj[sp_anchor_sign]], dim=-1)
+            #     # probs_ac = torch.softmax(probs_ac, dim=-1)
+
+            #     # probs_nac = torch.stack([prob[~sp_anchor_sign], prob_adj[~sp_anchor_sign], prob_sp], dim=-1)
+            #     # probs_nac = torch.softmax(probs_nac, dim=-1)
+
+            #     # bit_feat = torch.empty_like(feat_chosen)
+            #     # bit_feat[sp_anchor_sign] = pc.EG_mix_prob_2.forward(feat_chosen[sp_anchor_sign],
+            #     #                                     mean[sp_anchor_sign], mean_adj[sp_anchor_sign],
+            #     #                                     scale[sp_anchor_sign], scale_adj[sp_anchor_sign],
+            #     #                                     probs_ac[..., 0], probs_ac[..., 1],
+            #     #                                     Q=Q_feat[sp_anchor_sign], x_mean=pc._anchor_feat.mean())
+                
+            #     # bit_feat[~sp_anchor_sign] = pc.EG_mix_prob_3.forward(feat_chosen[~sp_anchor_sign],
+            #     #                                     mean[~sp_anchor_sign], mean_adj[~sp_anchor_sign], mean_sp,
+            #     #                                     scale[~sp_anchor_sign], scale_adj[~sp_anchor_sign], scale_sp,
+            #     #                                     probs_nac[..., 0], probs_nac[..., 1], probs_nac[..., 2],
+            #     #                                     Q=Q_feat[~sp_anchor_sign], x_mean=pc._anchor_feat.mean())
+
+
+            #     # knn_indices = pc.knn_indices[choose_idx]
+            #     # sp_feat = pc._anchor_feat[knn_indices]
+            #     # mean_sp, scale_sp, prob_sp = pc.get_spatial_mlp.forward(sp_feat, torch.cat([mean, scale, prob], dim=-1).contiguous())
+            #     # probs = torch.stack([prob, prob_adj, prob_sp], dim=-1)
+            #     # probs = torch.softmax(probs, dim=-1)
+            #     # bit_feat = pc.EG_mix_prob_3.forward(feat_chosen,
+            #     #                                     mean, mean_adj, mean_sp,
+            #     #                                     scale, scale_adj, scale_sp,
+            #     #                                     probs[..., 0], probs[..., 1], probs[..., 2],
+            #     #                                     Q=Q_feat, x_mean=pc._anchor_feat.mean())
+
+
+            #     # sp_anchor_sign = pc.spatial_anchor_sign[choose_idx]  
+            #     # nac_choose_idx = choose_idx[~pc.spatial_anchor_sign]
+            #     # knn_indices = pc.knn_indices[nac_choose_idx]
+            #     # nac_sp_feat = pc._anchor_feat[knn_indices]
+            #     # ac_coords = anchor_chosen[sp_anchor_sign]
+            #     # ac_sp_ctx_side = pc.calc_interp_feat(ac_coords, ac_sp=True)
+            #     # sp_ctx = torch.zeros((feat_chosen.shape[0], 50), device='cuda', dtype=torch.float32)
+            #     # sp_ctx[sp_anchor_sign] = pc.get_ac_sp_mlp(ac_sp_ctx_side)
+            #     # sp_ctx[~sp_anchor_sign] = pc.get_spatial_mlp.forward(nac_sp_feat)
+
+            #     # knn_indices = pc.knn_indices[choose_idx]
+            #     # sp_feat = pc._anchor_feat[knn_indices]
+            #     # sp_ctx = torch.zeros((feat_chosen.shape[0], 50), device='cuda', dtype=torch.float32)
+            #     # sp_ctx[~sp_anchor_sign] = pc.get_spatial_mlp.forward(sp_feat[~sp_anchor_sign])
+
+            #     # ac_sp_ctx_side = pc.get_deform_mlp.forward(sp_feat[sp_anchor_sign].reshape(-1, 50))
+            #     # sp_ctx[sp_anchor_sign] = pc.get_spatial_mlp.forward(ac_sp_ctx_side.reshape(-1, 3, 50))
+
+            #     # nac_sp_ctx_side = pc.get_deform_mlp.forward(sp_feat[~sp_anchor_sign].reshape(-1, 50))
+            #     # sp_ctx[~sp_anchor_sign] = pc.get_spatial_mlp.forward(nac_sp_ctx_side.reshape(-1, 3, 50))
+
+            #     # mean, scale = pc.get_param_mlp(feat_hyper, ch_ctx, sp_ctx)
+            #     # mean, scale = pc.get_param_mlp(feat_hyper, ch_ctx)
+            #     # bit_feat = pc.entropy_gaussian(feat_chosen, mean, scale, Q_feat, pc._anchor_feat.mean())
+                
+            #     knn_indices = pc.knn_indices[choose_idx]
+            #     base_indices = pc.base_mask[choose_idx]
+            #     sp_feat = pc._anchor_feat[pc.refer_mask][knn_indices]
+            #     # sp_feat = pc._anchor_feat[knn_indices]
+            #     sp_ctx = pc.get_spatial_mlp.forward(sp_feat)
+            #     sp_ctx[base_indices, ...] = 0
+            #     means, scales = pc.get_param_mlp(feat_hyper, ch_ctx, sp_ctx)
+            #     bit_feat = pc.entropy_gaussian(feat_chosen, means, scales, Q_feat, pc._anchor_feat.mean())
+
+            # knn_indices = pc.knn_indices[choose_idx]
+            # base_indices = pc.base_mask[choose_idx]
+            # sp_feat = pc._anchor_feat[knn_indices]
+            # sp_ctx = pc.get_spatial_mlp.forward(sp_feat)
+            # base_pts = anchor_chosen[base_indices]
+            # sp_ctx[base_indices, ...] = pc.mlp_base_sp(base_pts)
+            # means, scales = pc.get_param_mlp(feat_hyper, ch_ctx, sp_ctx)
+            # bit_feat = pc.entropy_gaussian(feat_chosen, means, scales, Q_feat, pc._anchor_feat.mean())
+
+
             grid_scaling_chosen = grid_scaling_chosen + torch.empty_like(grid_scaling_chosen).uniform_(-0.5, 0.5) * Q_scaling
             grid_offsets_chosen = grid_offsets_chosen + torch.empty_like(grid_offsets_chosen).uniform_(-0.5, 0.5) * Q_offsets
             grid_offsets_chosen = grid_offsets_chosen.view(-1, 3 * pc.n_offsets)
 
             binary_grid_masks_chosen = binary_grid_masks_chosen.repeat(1, 1, 3).view(-1, 3*pc.n_offsets)
 
-            bit_feat = pc.EG_mix_prob_2.forward(feat_chosen,
-                                                mean, mean_adj,
-                                                scale, scale_adj,
-                                                probs[..., 0], probs[..., 1],
-                                                Q=Q_feat, x_mean=pc._anchor_feat.mean())
             bit_feat = bit_feat * mask_anchor_chosen
             bit_scaling = pc.entropy_gaussian.forward(grid_scaling_chosen, mean_scaling, scale_scaling, Q_scaling, pc.get_scaling.mean())
             bit_scaling = bit_scaling * mask_anchor_chosen
@@ -117,23 +349,33 @@ def generate_neural_gaussians(viewpoint_camera, pc : GaussianModel, visible_mask
             bit_per_offsets_param = torch.sum(bit_offsets) / bit_offsets.numel()
             bit_per_param = (torch.sum(bit_feat) + torch.sum(bit_scaling) + torch.sum(bit_offsets)) / \
                             (bit_feat.numel() + bit_scaling.numel() + bit_offsets.numel())
+             
+            # if step>15_000:
+            #     mask_anchor_chosen = mask_anchor_chosen[:, 0]
+            #     sp_anchor_sign = pc.spatial_anchor_sign[choose_idx]
+            #     valid_nac_sign = torch.logical_and(mask_anchor_chosen, ~sp_anchor_sign)
+            #     bit_ac_feat = bit_feat[sp_anchor_sign]
+            #     bit_nac_feat = bit_feat[valid_nac_sign]
 
-    elif not pc.decoded_version:
-        torch.cuda.synchronize(); t1 = time.time()
-        feat_context = pc.calc_interp_feat(anchor)
-        mean, scale, prob, mean_scaling, scale_scaling, mean_offsets, scale_offsets, Q_feat_adj, Q_scaling_adj, Q_offsets_adj = \
-            torch.split(pc.get_grid_mlp(feat_context), split_size_or_sections=[pc.feat_dim, pc.feat_dim, pc.feat_dim, 6, 6, 3*pc.n_offsets, 3*pc.n_offsets, 1, 1, 1], dim=-1)
+            #     bit_per_ac_feat = torch.sum(bit_ac_feat) / bit_ac_feat.numel()
+            #     bit_per_nac_feat = torch.sum(bit_nac_feat) / bit_nac_feat.numel()
 
-        Q_feat_adj = Q_feat_adj.contiguous().repeat(1, mean.shape[-1])
-        Q_scaling_adj = Q_scaling_adj.contiguous().repeat(1, mean_scaling.shape[-1])
-        Q_offsets_adj = Q_offsets_adj.contiguous().repeat(1, mean_offsets.shape[-1])
-        Q_feat = Q_feat * (1 + torch.tanh(Q_feat_adj))
-        Q_scaling = Q_scaling * (1 + torch.tanh(Q_scaling_adj))
-        Q_offsets = Q_offsets * (1 + torch.tanh(Q_offsets_adj)).view(-1, pc.n_offsets, 3)  # [N_visible_anchor, 10, 3]
-        feat = (STE_multistep.apply(feat, Q_feat, pc._anchor_feat.mean())).detach()
-        grid_scaling = (STE_multistep.apply(grid_scaling, Q_scaling, pc.get_scaling.mean())).detach()
-        grid_offsets = (STE_multistep.apply(grid_offsets, Q_offsets, pc._offset.mean())).detach()
-        torch.cuda.synchronize(); time_sub = time.time() - t1
+    # elif not pc.decoded_version:
+    #     torch.cuda.synchronize(); t1 = time.time()
+    #     feat_context = pc.calc_interp_feat(anchor)
+    #     mean, scale, prob, mean_scaling, scale_scaling, mean_offsets, scale_offsets, Q_feat_adj, Q_scaling_adj, Q_offsets_adj = \
+    #         torch.split(pc.get_grid_mlp(feat_context), split_size_or_sections=[pc.feat_dim, pc.feat_dim, pc.feat_dim, 6, 6, 3*pc.n_offsets, 3*pc.n_offsets, 1, 1, 1], dim=-1)
+
+    #     Q_feat_adj = Q_feat_adj.contiguous().repeat(1, mean.shape[-1])
+    #     Q_scaling_adj = Q_scaling_adj.contiguous().repeat(1, mean_scaling.shape[-1])
+    #     Q_offsets_adj = Q_offsets_adj.contiguous().repeat(1, mean_offsets.shape[-1])
+    #     Q_feat = Q_feat * (1 + torch.tanh(Q_feat_adj))
+    #     Q_scaling = Q_scaling * (1 + torch.tanh(Q_scaling_adj))
+    #     Q_offsets = Q_offsets * (1 + torch.tanh(Q_offsets_adj)).view(-1, pc.n_offsets, 3)  # [N_visible_anchor, 10, 3]
+    #     feat = (STE_multistep.apply(feat, Q_feat, pc._anchor_feat.mean())).detach()
+    #     grid_scaling = (STE_multistep.apply(grid_scaling, Q_scaling, pc.get_scaling.mean())).detach()
+    #     grid_offsets = (STE_multistep.apply(grid_offsets, Q_offsets, pc._offset.mean())).detach()
+    #     torch.cuda.synchronize(); time_sub = time.time() - t1
 
     else:
         pass
@@ -204,7 +446,7 @@ def generate_neural_gaussians(viewpoint_camera, pc : GaussianModel, visible_mask
         rot = rot[the_mask]
 
     if is_training:
-        return xyz, color, opacity, scaling, rot, neural_opacity, mask, bit_per_param, bit_per_feat_param, bit_per_scaling_param, bit_per_offsets_param
+        return xyz, color, opacity, scaling, rot, neural_opacity, mask, bit_per_param, bit_per_feat_param, bit_per_scaling_param, bit_per_offsets_param, bit_feat_levels
     else:
         return xyz, color, opacity, scaling, rot, time_sub
 
@@ -218,7 +460,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     is_training = pc.get_color_mlp.training
 
     if is_training:
-        xyz, color, opacity, scaling, rot, neural_opacity, mask, bit_per_param, bit_per_feat_param, bit_per_scaling_param, bit_per_offsets_param = generate_neural_gaussians(viewpoint_camera, pc, visible_mask, is_training=is_training, step=step)
+        xyz, color, opacity, scaling, rot, neural_opacity, mask, bit_per_param, bit_per_feat_param, bit_per_scaling_param, bit_per_offsets_param, bit_feat_levels = generate_neural_gaussians(viewpoint_camera, pc, visible_mask, is_training=is_training, step=step)
     else:
         xyz, color, opacity, scaling, rot, time_sub = generate_neural_gaussians(viewpoint_camera, pc, visible_mask, is_training=is_training, step=step)
 
@@ -274,6 +516,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
                 "bit_per_feat_param": bit_per_feat_param,
                 "bit_per_scaling_param": bit_per_scaling_param,
                 "bit_per_offsets_param": bit_per_offsets_param,
+                "bit_feat_levels": bit_feat_levels
                 }
     else:
         return {"render": rendered_image,

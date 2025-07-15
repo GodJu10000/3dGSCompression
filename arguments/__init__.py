@@ -100,7 +100,7 @@ class OptimizationParams(ParamGroup):
         self.scaling_lr = 0.007
         self.rotation_lr = 0.002
 
-        self.mlp_opacity_lr_init = 0.002
+        self.mlp_opacity_lr_init = 0.002 
         self.mlp_opacity_lr_final = 0.00002
         self.mlp_opacity_lr_delay_mult = 0.01
         self.mlp_opacity_lr_max_steps = 30_000
@@ -135,10 +135,40 @@ class OptimizationParams(ParamGroup):
         self.mlp_deform_lr_delay_mult = 0.01
         self.mlp_deform_lr_max_steps = 30_000
 
+        self.mlp_spatial_lr_init = 0.005
+        self.mlp_spatial_lr_final = 0.0005
+        self.mlp_spatial_lr_delay_mult = 0.01
+        self.mlp_spatial_lr_max_steps = 30_000
+
+        self.mlp_param_lr_init = 0.005
+        self.mlp_param_lr_final = 0.0005
+        self.mlp_param_lr_delay_mult = 0.01
+        self.mlp_param_lr_max_steps = 30_000
+
         self.mlp_hyp_lr_init = 0.005
         self.mlp_hyp_lr_final = 0.0005
         self.mlp_hyp_lr_delay_mult = 0.01
         self.mlp_hyp_lr_max_steps = 30_000
+
+        self.mlp_ac_sp_lr_init = 0.005
+        self.mlp_ac_sp_lr_final = 0.00001
+        self.mlp_ac_sp_lr_delay_mult = 0.01
+        self.mlp_ac_sp_lr_max_steps = 30_000
+
+        self.encoding_xyz_ac_lr_init = 0.005
+        self.encoding_xyz_ac_lr_final = 0.00001
+        self.encoding_xyz_ac_lr_delay_mult = 0.33
+        self.encoding_xyz_ac_lr_max_steps = 30_000
+
+        self.mlp_VM_lr_init = 0.008
+        self.mlp_VM_lr_final = 0.00005
+        self.mlp_VM_lr_delay_mult = 0.01
+        self.mlp_VM_lr_max_steps = 30_000
+
+        self.mlp_feat_Q_lr_init = 0.008
+        self.mlp_feat_Q_lr_final = 0.00005
+        self.mlp_feat_Q_lr_delay_mult = 0.01
+        self.mlp_feat_Q_lr_max_steps = 30_000
 
         self.percent_dense = 0.01
         self.lambda_dssim = 0.2
@@ -148,6 +178,10 @@ class OptimizationParams(ParamGroup):
         self.update_from = 1500
         self.update_interval = 100
         self.update_until = 15_000
+        
+
+        self.index_update_interval = 200
+
         
         self.min_opacity = 0.005  # 0.2
         self.success_threshold = 0.8
