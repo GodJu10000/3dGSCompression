@@ -140,7 +140,7 @@ def generate_neural_gaussians(viewpoint_camera, pc : GaussianModel, visible_mask
             #     torch.split(plane_context, split_size_or_sections=[6, 6, 3*pc.n_offsets, 3*pc.n_offsets, 1, 1], dim=-1)        
 
             mean_scaling, scale_scaling, mean_offsets, scale_offsets, Q_scaling_adj, Q_offsets_adj = \
-                torch.split(pc.mlp_VM(hyper_prior), split_size_or_sections=[6, 6, 3*pc.n_offsets, 3*pc.n_offsets, 1, 1, 1], dim=-1)
+                torch.split(pc.mlp_VM(hyper_prior), split_size_or_sections=[6, 6, 3*pc.n_offsets, 3*pc.n_offsets, 1, 1], dim=-1)
             Q_feat_adj = pc.mlp_feat_Q(hyper_prior)
 
             Q_feat = 1
@@ -197,10 +197,11 @@ def generate_neural_gaussians(viewpoint_camera, pc : GaussianModel, visible_mask
             mask_list = [getattr(pc, f"level_{i}_mask") for i in range(pc.level_num)]
             knn_indices = pc.knn_indices[choose_idx]
             sp_feat = pc._anchor_feat[pc.refer_mask][pc.morton_indices][knn_indices]  # (N, knn, feat.shape[-1])
-            sp_anchor = pc._anchor_feat[pc.refer_mask][pc.morton_indices][knn_indices].view(-1, 3)  # (N*knn, anchor.shape[-1])
-            Q_feat_sp_adj = pc.mlp_feat_Q(pc.query_triplane(sp_anchor)).view(-1, 2, 1)  #(N, knn, 1)
-            Q_feat_sp = 1
-            Q_feat_sp = Q_feat_sp * (1 + torch.tanh(Q_feat_sp_adj))
+            with torch.no_grad():
+                sp_anchor = pc.get_anchor[pc.refer_mask][pc.morton_indices][knn_indices].view(-1, 3)  # (N*knn, anchor.shape[-1])
+                Q_feat_sp_adj = pc.mlp_feat_Q(pc.query_triplane(sp_anchor)).view(-1, 2, 1)  #(N, knn, 1)
+                Q_feat_sp = 1
+                Q_feat_sp = Q_feat_sp * (1 + torch.tanh(Q_feat_sp_adj))
             sp_feat = sp_feat + torch.empty_like(sp_feat).uniform_(-0.5, 0.5) * Q_feat_sp
 
             sp_ctx = pc.get_spatial_mlp.forward(sp_feat, mask_list, choose_idx)

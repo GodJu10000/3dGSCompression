@@ -3086,6 +3086,7 @@ class GaussianModel(nn.Module):
         mask_list = [getattr(self, f"level_{i}_mask") for i in range(self.level_num)]
         knn_indices = self.knn_indices[mask_anchor]
         sp_feat = _feat[self.morton_indices][knn_indices]
+        
         # sp_ctx = self.get_spatial_mlp.forward(sp_feat)
         sp_ctx = self.get_spatial_mlp.forward(sp_feat, mask_list, mask_anchor)
         ch_ctx = self.get_deform_mlp.forward(_feat, mask_list, mask_anchor)
@@ -3312,8 +3313,9 @@ class GaussianModel(nn.Module):
         print('codec time:', t_codec)
 
         # adjust opacity and rotation order for prefilter
-        self._opacity = self._opacity[mask_anchor][sorted_indices][encode_order]
-        self._rotation = self._rotation[mask_anchor][sorted_indices][encode_order]
+        with torch.no_grad():
+            self._opacity.data = self._opacity[mask_anchor][sorted_indices][encode_order]
+            self._rotation.data = self._rotation[mask_anchor][sorted_indices][encode_order]
 
 
         # 32*3*2/bit2MB_scale is for xyz_bound_min and xyz_bound_max
