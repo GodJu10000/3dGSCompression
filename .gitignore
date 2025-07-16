@@ -1,0 +1,19 @@
+# 训练日志和中间结果
+*.log
+output/
+
+
+# 临时数据
+*.tmp
+*.cache
+
+# Python 常见文件
+__pycache__/
+*.pyc
+
+# Jupyter notebook checkpoint
+.ipynb_checkpoints/
+
+# 大模型
+*.pth
+*.pt

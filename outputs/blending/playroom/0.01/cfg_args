@@ -1,1 +1,0 @@
-Namespace(sh_degree=3, feat_dim=50, n_offsets=10, voxel_size=0.005, update_depth=3, update_init_factor=16, update_hierachy_factor=4, use_feat_bank=False, source_path='/home/yhy/HAC+++/data/blending/playroom', model_path='outputs/blending/playroom/0.01', images='images', resolution=-1, white_background=False, data_device='cuda', eval=True, lod=0)
