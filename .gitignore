@@ -1,6 +1,6 @@
 # 训练日志和中间结果
 *.log
-output/
+outputs/
 
 
 # 临时数据
