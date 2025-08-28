@@ -70,6 +70,25 @@ class STE_multistep(torch.autograd.Function):
         return grad_output, None
 
 
+class QuantizeWithGrad(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x, q):
+        ctx.save_for_backward(x, q)
+        return torch.round(x / q) * q
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        x, q = ctx.saved_tensors
+        # x_hat = round(x / q) * q
+        # 对 x 的梯度：∂x_hat / ∂x = 1（STE）
+        # 对 q 的梯度：∂x_hat / ∂q = - (x / q-round(x / q))
+
+        grad_x = grad_output.clone()  # 因为 ∂x_hat/∂x ≈ 1
+        grad_q = grad_output * (x / q - torch.round(x / q)) * (-1)
+        return grad_x, grad_q
+    
+
+
 class Quantize_anchor(torch.autograd.Function):
     @staticmethod
     def forward(ctx, anchors, min_v, max_v):

@@ -170,6 +170,16 @@ class OptimizationParams(ParamGroup):
         self.mlp_feat_Q_lr_delay_mult = 0.01
         self.mlp_feat_Q_lr_max_steps = 30_000
 
+        self.mlp_knn_lr_init = 0.008
+        self.mlp_knn_lr_final = 0.00005
+        self.mlp_knn_lr_delay_mult = 0.01
+        self.mlp_knn_lr_max_steps = 30_000
+
+        self.mlp_feat_weight_lr_init = 0.008
+        self.mlp_feat_weight_lr_final = 0.00005
+        self.mlp_feat_weight_lr_delay_mult = 0.01
+        self.mlp_feat_weight_lr_max_steps = 30_000
+
         self.percent_dense = 0.01
         self.lambda_dssim = 0.2
         

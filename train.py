@@ -163,6 +163,8 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
         # bit_per_ac_feat = render_pkg["bit_per_ac_feat"]
         # bit_per_nac_feat = render_pkg["bit_per_nac_feat"]
         bit_feat_levels = render_pkg["bit_feat_levels"]
+        # bit_per_knn = render_pkg["bit_per_knn"]
+        # dis_loss = render_pkg["dis_loss"]
         if iteration % 1000 == 0 and bit_per_param is not None:
             with torch.no_grad():
                 valid_num = gaussians.get_mask_anchor.to(torch.bool)[:, 0].sum().item()
@@ -170,6 +172,7 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
                 ttl_size_feat_MB = bit_per_feat_param.item() * valid_num * gaussians.feat_dim / bit2MB_scale
                 ttl_size_scaling_MB = bit_per_scaling_param.item() * valid_num * 6 / bit2MB_scale
                 ttl_size_offsets_MB = bit_per_offsets_param.item() * valid_num * 3 * gaussians.n_offsets / bit2MB_scale
+                # ttl_size_knn = bit_per_knn.item() * valid_num / bit2MB_scale
                 ttl_size_MB = ttl_size_feat_MB + ttl_size_scaling_MB + ttl_size_offsets_MB
 
             logger.info("\n----------------------------------------------------------------------------------------")
@@ -177,6 +180,7 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
             logger.info("\n-----[ITER {}] bits info: bit_per_scaling_param={}, valid_num={}, ttl_size_scaling_MB={}-----".format(iteration, bit_per_scaling_param.item(), valid_num, ttl_size_scaling_MB))
             logger.info("\n-----[ITER {}] bits info: bit_per_offsets_param={}, valid_num={}, ttl_size_offsets_MB={}-----".format(iteration, bit_per_offsets_param.item(), valid_num, ttl_size_offsets_MB))
             logger.info("\n-----[ITER {}] bits info: bit_per_param={}, valid_num={}, ttl_size_MB={}-----".format(iteration, bit_per_param.item(), valid_num, ttl_size_MB))
+            # logger.info("\n-----[ITER {}] bits info: bit_per_knn_indices={}, query_num={}, ttl_size_knn_MB={}-----".format(iteration, bit_per_knn.item(), valid_num/2, ttl_size_knn))
             for i, bit_feat_level in enumerate(bit_feat_levels):
                 logger.info("\n-----[ITER {}] bits info: bit_per_param_level_{}={}-----".format(iteration, i, bit_feat_level.item()))
 
@@ -223,10 +227,10 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
             # Log and save
             # prune and update index
 
-            if opt.update_until <= iteration <= opt.iterations and iteration % opt.index_update_interval == 0:
-            # if iteration <= opt.iterations and iteration % opt.index_update_interval == 1:
-            # if 10000 <= iteration <= opt.iterations and iteration % opt.update_interval == 0:
-                gaussians.knn_update_3()
+            # if opt.update_until <= iteration <= opt.iterations and iteration % opt.index_update_interval == 0:
+            # # if iteration <= opt.iterations and iteration % opt.index_update_interval == 1:
+            # # if 10000 <= iteration <= opt.iterations and iteration % opt.update_interval == 0:
+            #     gaussians.knn_update_12(knn=gaussians.knn_num)
 
             torch.cuda.synchronize(); t_start_log = time.time()
             training_report(tb_writer, dataset_name, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background), wandb, logger, args_param.model_path)
@@ -245,8 +249,8 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
                     # densification
                     if iteration > opt.update_from and iteration % opt.update_interval == 0:
                         gaussians.adjust_anchor(check_interval=opt.update_interval, success_threshold=opt.success_threshold, grad_threshold=opt.densify_grad_threshold, min_opacity=opt.min_opacity)
-                        if iteration>=10_000:
-                            gaussians.knn_update_3()
+                        # if iteration>=10_000:
+                        #     gaussians.knn_update_12(knn=gaussians.knn_num)
 
             elif iteration == opt.update_until:
                 del gaussians.opacity_accum

@@ -1,0 +1,1 @@
+Namespace(data_device='cuda', eval=True, feat_dim=50, images='images', lod=0, model_path='outputs/blending/playroom/0.004', n_offsets=10, resolution=-1, sh_degree=3, source_path='/home/JJ_Group/yanhy2407/3dGSCompression/data/blending/playroom', update_depth=3, update_hierachy_factor=4, update_init_factor=16, use_feat_bank=False, voxel_size=0.005, white_background=False)

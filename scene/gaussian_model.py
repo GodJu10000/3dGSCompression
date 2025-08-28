@@ -14,6 +14,7 @@ import time
 from functools import reduce
 
 import numpy as np
+from einops import repeat
 import torch
 from plyfile import PlyData, PlyElement
 from simple_knn._C import distCUDA2
@@ -430,25 +431,220 @@ class Spatial_CTX_fea_knn_tiny(nn.Module):
         return mean_sp, scale_sp, prob_sp
 
 
+class Channel_CTX(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.ch_ctx0 = nn.Parameter(torch.zeros(size=[1, 5*2]))
+        self.MLP_d1 = nn.Sequential(
+            nn.Linear(5, 10*3),
+            nn.LeakyReLU(inplace=True),
+            nn.Linear(10*3, 10*2),
+        )
+        self.MLP_d2 = nn.Sequential(
+            nn.Linear(15, 15*3),
+            nn.LeakyReLU(inplace=True),
+            nn.Linear(15*3, 15*2),
+        )
+        self.MLP_d3 = nn.Sequential(
+            nn.Linear(30, 20*3),
+            nn.LeakyReLU(inplace=True),
+            nn.Linear(20*3, 20*2),
+        )
+
+    def forward(self, fea_q, to_dec=-1):  # chctx_v3
+        # fea_q: [N, 50]
+        if to_dec == -1:
+            NN = fea_q.shape[0]
+            ch_ctx0 = self.ch_ctx0.repeat(NN, 1)
+            ch_ctx1 = self.MLP_d1(fea_q[..., :5])
+            ch_ctx2 = self.MLP_d2(fea_q[..., :15])
+            ch_ctx3 = self.MLP_d3(fea_q[..., :30])
+
+            ch_ctx = torch.cat([ch_ctx0, ch_ctx1, ch_ctx2, ch_ctx3], dim=-1)
+
+            return ch_ctx
+
+        elif to_dec == 0:
+            NN = fea_q.shape[0]
+            ch_ctx0 = self.ch_ctx0.repeat(NN, 1)
+
+            return ch_ctx0
+
+        else:
+            MLP = getattr(self, f"MLP_d{to_dec}")
+            ch_ctx = MLP(fea_q[..., :5*to_dec*(to_dec+1)/2])
+
+            return ch_ctx
+
+# class Channel_CTX(nn.Module):
+#     def __init__(self, num_groups=2, dims=[5, 10, 15, 20]):
+#         super().__init__()
+
+#         self.num_groups = num_groups
+#         self.dims = dims  # 每层的维度
+
+#         self.ch_ctx0 = nn.ParameterList([
+#             nn.Parameter(torch.zeros(1, 5 * 2)) for _ in range(num_groups)
+#         ])
+
+#         self.groups = nn.ModuleList()
+
+#         for g in range(num_groups):
+#             level_mlps = nn.ModuleList()
+#             pre_dim = 0
+#             for d, dim in enumerate(dims):
+#                 if d == 0:
+#                     pre_dim = dim
+#                     continue
+#                 input_dim = pre_dim
+#                 hidden_dim = dim * 3
+#                 output_dim = dim * 2
+#                 mlp = nn.Sequential(
+#                     nn.Linear(input_dim, hidden_dim),
+#                     nn.LeakyReLU(inplace=True),
+#                     nn.Linear(hidden_dim, output_dim),
+#                 )
+#                 level_mlps.append(mlp)
+#                 pre_dim += dim
+#             self.groups.append(level_mlps)
+
+#     def forward(self, feat_q=None, ch_to_dec=-1, decoding=False, group_to_dec=-1, group_num=0):  # chctx_v3
+#         if feat_q is not None:
+#             B, _ = feat_q.shape
+#             device = feat_q.device
+#             dtype = feat_q.dtype
+
+#         # fea_q: [N, 50]
+#         if ch_to_dec == -1:
+#             ch_ctx = []
+#             for group_id, group in enumerate(self.groups):
+
+#                 pre_dim = 0
+#                 group_out = []
+
+#                 for i, d in enumerate(self.dims):
+#                     if i==0:
+#                         out = self.ch_ctx0[group_id].repeat(B, 1)
+#                         pre_dim=d
+#                     else:
+#                         out = group[i-1](feat_q[..., :pre_dim])   
+#                         pre_dim += d                   
+#                     group_out.append(out)
+
+#                 output_cat = torch.cat(group_out, dim=-1)                     # (M, total_out_dim)
+#                 ch_ctx.append(output_cat)                         
+
+#             return ch_ctx
+
+#         elif decoding and group_to_dec!=-1 and group_num!=0:
+#             if ch_to_dec == 0:
+#                 outputs = self.ch_ctx0[group_to_dec].repeat(group_num, 1)
+
+#             else:
+#                 outputs = self.groups[group_to_dec][ch_to_dec-1](feat_q)  
+
+#             return outputs
+#         else:
+#             raise ValueError("Wrong input in Channel_CTX")   
+
+       
+        
+# class Channel_CTX(nn.Module):
+#     def __init__(self, num_groups=3, dims=[5, 10, 15, 20]):
+#         super().__init__()
+
+#         self.num_groups = num_groups
+#         self.dims = dims  # 每层的维度
+
+#         self.ch_ctx0 = nn.ParameterList([
+#             nn.Parameter(torch.zeros(1, 5 * 2)) for _ in range(num_groups)
+#         ])
+
+#         self.groups = nn.ModuleList()
+
+#         for g in range(num_groups):
+#             level_mlps = nn.ModuleList()
+#             pre_dim = 0
+#             for d, dim in enumerate(dims):
+#                 if d == 0:
+#                     pre_dim = dim
+#                     continue
+#                 input_dim = pre_dim
+#                 hidden_dim = dim * 3
+#                 output_dim = dim * 2
+#                 mlp = nn.Sequential(
+#                     nn.Linear(input_dim, hidden_dim),
+#                     nn.LeakyReLU(inplace=True),
+#                     nn.Linear(hidden_dim, output_dim),
+#                 )
+#                 level_mlps.append(mlp)
+#                 pre_dim += dim
+#             self.groups.append(level_mlps)
+
+
+#     def forward(self, feat_q=None, mask_list=[], choose_idx=None, ch_to_dec=-1, decoding=False, group_to_dec=-1, group_num=0):  # chctx_v3
+#         if feat_q is not None:
+#             B, _ = feat_q.shape
+#             device = feat_q.device
+#             dtype = feat_q.dtype
+
+#         # fea_q: [N, 50]
+#         if ch_to_dec == -1:
+#             # if choose_idx is None:
+#             #     choose_idx = torch.ones(mask_list[0].shape[0], device=device, dtype=torch.bool)
+#             outputs = torch.zeros(B, sum([d * 2 for d in self.dims]), device=device, dtype=dtype)
+#             for group_id, mask in enumerate(mask_list):
+#                 if choose_idx is not None:
+#                     mask = mask[choose_idx]  # shape: (B,)
+#                 group_num = mask.sum()
+#                 if group_num == 0:
+#                     continue
+#                 group_feat = feat_q[mask]
+#                 pre_dim = 0
+#                 group_out = []
+
+#                 for i, d in enumerate(self.dims):
+#                     if i==0:
+#                         out = self.ch_ctx0[group_id].repeat(group_num, 1)
+#                         pre_dim=d
+#                     else:
+#                         out = self.groups[group_id][i-1](group_feat[..., :pre_dim])   
+#                         pre_dim += d                   
+#                     group_out.append(out)
+
+#                 output_cat = torch.cat(group_out, dim=-1)                     # (M, total_out_dim)
+#                 outputs[mask] = output_cat              # 回填到输出                
+
+#             return outputs
+
+#         elif decoding and group_to_dec!=-1 and group_num!=0:
+#             if ch_to_dec == 0:
+#                 outputs = self.ch_ctx0[group_to_dec].repeat(group_num, 1)
+
+#             else:
+#                 outputs = self.groups[group_to_dec][ch_to_dec-1](feat_q)  
+
+#             return outputs
+#         else:
+#             raise ValueError("Wrong input in Channel_CTX")     
+
+
+
 # class Channel_CTX(nn.Module):
 #     def __init__(self):
 #         super().__init__()
 #         self.ch_ctx0 = nn.Parameter(torch.zeros(size=[1, 5*2]))
 #         self.MLP_d1 = nn.Sequential(
-#             nn.Linear(5, 10*3),
+#             nn.Linear(5, 5*3),
 #             nn.LeakyReLU(inplace=True),
-#             nn.Linear(10*3, 10*2),
+#             nn.Linear(5*3, 5*2),
 #         )
 #         self.MLP_d2 = nn.Sequential(
-#             nn.Linear(15, 15*3),
+#             nn.Linear(10, 40*3),
 #             nn.LeakyReLU(inplace=True),
-#             nn.Linear(15*3, 15*2),
+#             nn.Linear(40*3, 40*2),
 #         )
-#         self.MLP_d3 = nn.Sequential(
-#             nn.Linear(30, 20*3),
-#             nn.LeakyReLU(inplace=True),
-#             nn.Linear(20*3, 20*2),
-#         )
+
 
 #     def forward(self, fea_q, to_dec=-1):  # chctx_v3
 #         # fea_q: [N, 50]
@@ -456,10 +652,10 @@ class Spatial_CTX_fea_knn_tiny(nn.Module):
 #             NN = fea_q.shape[0]
 #             ch_ctx0 = self.ch_ctx0.repeat(NN, 1)
 #             ch_ctx1 = self.MLP_d1(fea_q[..., :5])
-#             ch_ctx2 = self.MLP_d2(fea_q[..., :15])
-#             ch_ctx3 = self.MLP_d3(fea_q[..., :30])
+#             ch_ctx2 = self.MLP_d2(fea_q[..., :10])
 
-#             ch_ctx = torch.cat([ch_ctx0, ch_ctx1, ch_ctx2, ch_ctx3], dim=-1)
+#             ch_ctx = torch.cat([ch_ctx0, ch_ctx1, ch_ctx2], dim=-1)
+#             # ch_ctx = torch.cat([ch_ctx0, ch_ctx1], dim=-1)
 
 #             return ch_ctx
 
@@ -475,84 +671,7 @@ class Spatial_CTX_fea_knn_tiny(nn.Module):
 
 #             return ch_ctx
 
-class Channel_CTX(nn.Module):
-    def __init__(self, num_groups=3, dims=[5, 10, 15, 20]):
-        super().__init__()
 
-        self.num_groups = num_groups
-        self.dims = dims  # 每层的维度
-
-        self.ch_ctx0 = nn.ParameterList([
-            nn.Parameter(torch.zeros(1, 5 * 2)) for _ in range(num_groups)
-        ])
-
-        self.groups = nn.ModuleList()
-
-        for g in range(num_groups):
-            level_mlps = nn.ModuleList()
-            pre_dim = 0
-            for d, dim in enumerate(dims):
-                if d == 0:
-                    pre_dim = dim
-                    continue
-                input_dim = pre_dim
-                hidden_dim = dim * 3
-                output_dim = dim * 2
-                mlp = nn.Sequential(
-                    nn.Linear(input_dim, hidden_dim),
-                    nn.LeakyReLU(inplace=True),
-                    nn.Linear(hidden_dim, output_dim),
-                )
-                level_mlps.append(mlp)
-                pre_dim += dim
-            self.groups.append(level_mlps)
-
-
-    def forward(self, feat_q=None, mask_list=[], choose_idx=None, ch_to_dec=-1, decoding=False, group_to_dec=-1, group_num=0):  # chctx_v3
-        if feat_q is not None:
-            B, _ = feat_q.shape
-            device = feat_q.device
-            dtype = feat_q.dtype
-
-        # fea_q: [N, 50]
-        if ch_to_dec == -1:
-            # if choose_idx is None:
-            #     choose_idx = torch.ones(mask_list[0].shape[0], device=device, dtype=torch.bool)
-            outputs = torch.zeros(B, sum([d * 2 for d in self.dims]), device=device, dtype=dtype)
-            for group_id, mask in enumerate(mask_list):
-                if choose_idx is not None:
-                    mask = mask[choose_idx]  # shape: (B,)
-                group_num = mask.sum()
-                if group_num == 0:
-                    continue
-                group_feat = feat_q[mask]
-                pre_dim = 0
-                group_out = []
-
-                for i, d in enumerate(self.dims):
-                    if i==0:
-                        out = self.ch_ctx0[group_id].repeat(group_num, 1)
-                        pre_dim=d
-                    else:
-                        out = self.groups[group_id][i-1](group_feat[..., :pre_dim])   
-                        pre_dim += d                   
-                    group_out.append(out)
-
-                output_cat = torch.cat(group_out, dim=-1)                     # (M, total_out_dim)
-                outputs[mask] = output_cat              # 回填到输出                
-
-            return outputs
-
-        elif decoding and group_to_dec!=-1 and group_num!=0:
-            if ch_to_dec == 0:
-                outputs = self.ch_ctx0[group_to_dec].repeat(group_num, 1)
-
-            else:
-                outputs = self.groups[group_to_dec][ch_to_dec-1](feat_q)  
-
-            return outputs
-        else:
-            raise ValueError("Wrong input in Channel_CTX")     
 
 # class Spatial_CTX(nn.Module):
 #     def __init__(self):
@@ -588,18 +707,294 @@ class Channel_CTX(nn.Module):
 
 #         return sp_ctx
 
+# class Spatial_CTX(nn.Module):
+#     def __init__(self, num_groups=3, dims=[5, 10, 15, 20], knn=2):
+#         super().__init__()
+
+#         self.num_groups = num_groups
+#         self.dims = dims  # 每层的维度
+#         self.knn = knn
+
+#         # 每个 group 有四层 MLP（对应 d0-d3），共 num_groups 组
+#         # self.groups = nn.ModuleList([
+#         #     nn.ModuleList([
+#         #         nn.Sequential(
+#         #             nn.Linear(d*knn, d*3),
+#         #             nn.LeakyReLU(inplace=True),
+#         #             nn.Linear(d*3, d*2),
+#         #         )    for d in dims
+#         #     ])
+#         #     for _ in range(num_groups-1)
+#         # ])
+
+#         # self.groups = nn.ModuleList([
+#         #     nn.ModuleList([
+#         #         nn.Linear(d * knn, d * 2) for d in dims
+#         #     ])
+#         #     for _ in range(num_groups-1)
+#         # ])
+
+#         # self.groups = nn.ModuleList([
+#         #     nn.Sequential(
+#         #         nn.Conv2d(
+#         #             in_channels=50,
+#         #             out_channels=50,
+#         #             kernel_size=1,
+#         #             groups=50  # Depthwise convolution
+#         #         ),
+#         #         nn.AdaptiveAvgPool2d((1, 2)),  # Output size: (1, 2)
+#         #         nn.Conv2d(
+#         #             in_channels=50,
+#         #             out_channels=50,
+#         #             kernel_size=1  # Pointwise convolution
+#         #         )
+#         #     )
+#         #     for _ in range(num_groups - 1)
+#         # ])
+
+#         stride = knn//2
+#         kernel_size = knn-stride
+#         self.groups = nn.ModuleList([
+#             nn.Sequential(
+#                 nn.Conv2d(
+#                     in_channels=50,
+#                     out_channels=50,
+#                     kernel_size=(1, kernel_size),
+#                     stride=(1, stride),
+#                     groups=50  # Depthwise convolution
+#                 ),
+#                 nn.Conv2d(
+#                     in_channels=50,
+#                     out_channels=50,
+#                     kernel_size=1  # Pointwise convolution
+#                 )
+#             )
+#             for _ in range(num_groups - 1)
+#         ])
+
+#     def forward(self, feat_q=None, mask_list=[], choose_idx=None, ch_to_dec=-1, decoding=False, group_to_dec=-1):
+#         # fea_q: (nonanchor_num, knn, fea_num)
+#         # fea_q shape: (B, knn, sum(dims)) e.g. (N, K, 50)
+#         if feat_q is not None:
+#             B, K, _ = feat_q.shape
+#             device = feat_q.device
+#             dtype = feat_q.dtype
+
+            
+#         if ch_to_dec == -1:
+#             # if choose_idx is None:
+#             #     choose_idx = torch.ones(mask_list[0].shape[0], device=device, dtype=torch.bool)
+#             outputs = torch.zeros(B, sum([d * 2 for d in self.dims]), device=device, dtype=dtype)
+#             for group_id, mask in enumerate(mask_list):
+#                 if group_id==0:
+#                     continue
+#                 if choose_idx is not None:
+#                     mask = mask[choose_idx]  # shape: (B,)
+#                 if mask.sum() == 0:
+#                     continue
+
+#                 feat = feat_q[mask]  # [M, k, C]
+
+#                 group_out = self.groups[group_id-1](feat.permute(0, 2, 1).unsqueeze(2))  # [M, C, 1, 2]
+#                 group_out = group_out.squeeze().reshape(-1, 2*50)
+#                 outputs[mask] = group_out              # 回填到输出
+
+#             return outputs  # shape: (B, total_out_dim)
+
+#         elif decoding and group_to_dec!=-1:
+#             d = self.dims[ch_to_dec]      
+                          
+#             outputs = self.groups[group_to_dec-1][ch_to_dec](feat_q.reshape(-1, d * self.knn))    
+#             return outputs  # shape: (B*K, d*2)
+#         else:
+#             raise ValueError("Wrong input in Spatial_CTX")
+
+# class Spatial_CTX(nn.Module):
+#     def __init__(self, num_groups=2, dims=[5, 10, 15, 20], knn=2):
+#         super().__init__()
+
+#         self.num_groups = num_groups
+#         self.dims = dims  # 每层的维度
+#         self.knn = 1  # after weighted
+
+#         # 每个 group 有四层 MLP（对应 d0-d3），共 num_groups 组
+#         # self.groups = nn.ModuleList([
+#         #     nn.ModuleList([
+#         #         nn.Sequential(
+#         #             nn.Linear(d*knn, d*3),
+#         #             nn.LeakyReLU(inplace=True),
+#         #             nn.Linear(d*3, d*2),
+#         #         )    for d in dims
+#         #     ])
+#         #     for _ in range(num_groups-1)
+#         # ])
+
+#         # self.groups = nn.ModuleList([
+#         #     nn.ModuleList([
+#         #         nn.Linear(d * knn, d * 2) for d in dims
+#         #     ])
+#         #     for _ in range(num_groups-1)
+#         # ])
+
+#         self.groups = nn.ModuleList([
+#             nn.ModuleList([
+#                 nn.Linear(50 * self.knn, d * 2) for d in dims
+#             ])
+#             for _ in range(num_groups-1)
+#         ])
+
+
+#     def forward(self, feat_q=None, ch_to_dec=-1, decoding=False, group_to_dec=-1):
+#         # fea_q: (nonanchor_num, knn, fea_num)
+#         # fea_q shape: (B, knn, sum(dims)) e.g. (N, K, 50)
+#         if feat_q is not None:
+#             B = feat_q.shape[0]
+#             device = feat_q.device
+#             dtype = feat_q.dtype
+
+#         if ch_to_dec == -1:
+            
+#             sp_ctx = []
+#             for group_id, group in enumerate(self.groups):
+
+#                 group_out = []
+
+#                 for i, d in enumerate(self.dims):
+#                     out = group[i](feat_q.reshape(-1, 50 * self.knn))
+#                     group_out.append(out)
+
+#                 output_cat = torch.cat(group_out, dim=-1)                     # (M, total_out_dim)
+#                 sp_ctx.append(output_cat)             
+
+#             return sp_ctx  
+
+#         elif decoding and group_to_dec!=-1:
+#             d = self.dims[ch_to_dec]      
+                          
+#             outputs = self.groups[group_to_dec-1][ch_to_dec](feat_q.reshape(-1, d * self.knn))    
+#             return outputs  # shape: (B*K, d*2)
+#         else:
+#             raise ValueError("Wrong input in Spatial_CTX")
+
+# class Spatial_CTX(nn.Module):
+#     def __init__(self, num_groups=2, dims=[5, 10, 15, 20], knn=2):
+#         super().__init__()
+
+#         self.num_groups = num_groups
+#         self.dims = dims  # 每层的维度
+#         self.knn = knn  # after weighted
+
+#         # 每个 group 有四层 MLP（对应 d0-d3），共 num_groups 组
+#         # self.groups = nn.ModuleList([
+#         #     nn.ModuleList([
+#         #         nn.Sequential(
+#         #             nn.Linear(d*knn, d*3),
+#         #             nn.LeakyReLU(inplace=True),
+#         #             nn.Linear(d*3, d*2),
+#         #         )    for d in dims
+#         #     ])
+#         #     for _ in range(num_groups-1)
+#         # ])
+
+#         # self.groups = nn.ModuleList([
+#         #     nn.ModuleList([
+#         #         nn.Linear(d * knn, d * 2) for d in dims
+#         #     ])
+#         #     for _ in range(num_groups-1)
+#         # ])
+
+#         self.groups_1 = nn.ModuleList([
+#             nn.ModuleList([
+#                 nn.Linear(50 * self.knn, d * 2) for d in dims[:2]
+#             ])
+#             for _ in range(num_groups-1)
+#         ])
+
+#         self.groups_2 = nn.ModuleList([
+#             nn.ModuleList([
+#                 nn.Linear(50 * self.knn, d * 2) for d in dims[2:]
+#             ])
+#             for _ in range(num_groups-1)
+#         ])
+
+
+
+#     def forward(self, feat_q=None, mask_list=[], choose_idx=None, ch_to_dec=-1, decoding=False, group_to_dec=-1):
+
+#         if feat_q is not None:
+#             B = feat_q.shape[0]
+#             device = feat_q.device
+#             dtype = feat_q.dtype
+
+#         if ch_to_dec == -1:
+#             # if choose_idx is None:
+#             #     choose_idx = torch.ones(mask_list[0].shape[0], device=device, dtype=torch.bool)
+#             outputs = torch.zeros(B, sum([d * 2 for d in self.dims]), device=device, dtype=dtype)
+#             feat_q_1, feat_q_2 = torch.split(feat_q, [self.knn, self.knn], dim=1)  # 2*(B, K, C)
+
+#             for group_id, mask in enumerate(mask_list):
+#                 if group_id==0:
+#                     continue
+#                 if choose_idx is not None:
+#                     mask = mask[choose_idx]  # shape: (B,)
+#                 if mask.sum() == 0:
+#                     continue
+
+#                 group_out = []
+
+#                 for i, d in enumerate(self.dims):
+#                     if i<2:
+#                         feat = feat_q_1[mask]  
+#                         out = self.groups_1[group_id-1][i](feat.reshape(-1, 50 * self.knn))
+#                     else:
+#                         feat = feat_q_2[mask]  
+#                         out = self.groups_2[group_id-1][i-2](feat.reshape(-1, 50 * self.knn))
+
+#                     group_out.append(out)
+
+#                 output_cat = torch.cat(group_out, dim=-1)                     # (M, total_out_dim)
+#                 outputs[mask] = output_cat              # 回填到输出
+
+#             return outputs  # shape: (B, total_out_dim)
+
+#         elif decoding and group_to_dec!=-1:
+#             d = self.dims[ch_to_dec]      
+                          
+#             outputs = self.groups[group_to_dec-1][ch_to_dec](feat_q.reshape(-1, d * self.knn))    
+#             return outputs  # shape: (B*K, d*2)
+#         else:
+#             raise ValueError("Wrong input in Spatial_CTX")
+                        
 class Spatial_CTX(nn.Module):
     def __init__(self, num_groups=3, dims=[5, 10, 15, 20], knn=2):
         super().__init__()
 
         self.num_groups = num_groups
         self.dims = dims  # 每层的维度
-        self.knn = knn
+        self.knn = knn  # after weighted
 
         # 每个 group 有四层 MLP（对应 d0-d3），共 num_groups 组
+        # self.groups = nn.ModuleList([
+        #     nn.ModuleList([
+        #         nn.Sequential(
+        #             nn.Linear(d*knn, d*3),
+        #             nn.LeakyReLU(inplace=True),
+        #             nn.Linear(d*3, d*2),
+        #         )    for d in dims
+        #     ])
+        #     for _ in range(num_groups-1)
+        # ])
+
+        # self.groups = nn.ModuleList([
+        #     nn.ModuleList([
+        #         nn.Linear(d * knn, d * 2) for d in dims
+        #     ])
+        #     for _ in range(num_groups-1)
+        # ])
+
         self.groups = nn.ModuleList([
             nn.ModuleList([
-                nn.Linear(d * knn, d * 2) for d in dims
+                nn.Linear(d * self.knn, d * 2) for d in dims[:2]
             ])
             for _ in range(num_groups-1)
         ])
@@ -609,16 +1004,14 @@ class Spatial_CTX(nn.Module):
         # fea_q: (nonanchor_num, knn, fea_num)
         # fea_q shape: (B, knn, sum(dims)) e.g. (N, K, 50)
         if feat_q is not None:
-            B, K, _ = feat_q.shape
+            B = feat_q.shape[0]
             device = feat_q.device
             dtype = feat_q.dtype
-
-            
 
         if ch_to_dec == -1:
             # if choose_idx is None:
             #     choose_idx = torch.ones(mask_list[0].shape[0], device=device, dtype=torch.bool)
-            outputs = torch.zeros(B, sum([d * 2 for d in self.dims]), device=device, dtype=dtype)
+            outputs = torch.zeros(B, sum([d * 2 for d in self.dims[:2]]), device=device, dtype=dtype)
             split_feats = torch.split(feat_q, self.dims, dim=-1)  # 得到 d0, d1, d2, d3 # (B, K, dim)
             for group_id, mask in enumerate(mask_list):
                 if group_id==0:
@@ -630,9 +1023,12 @@ class Spatial_CTX(nn.Module):
 
                 group_out = []
 
-                for i, d in enumerate(self.dims):
+                for i, d in enumerate(self.dims[:2]):
                     feat = split_feats[i][mask]  # (M, K, d)
-                    out = self.groups[group_id-1][i](feat.reshape(-1, d * self.knn))                   # (M, d*k)
+                    out = self.groups[group_id-1][i](feat.reshape(-1, d * self.knn))
+                    # feat = feat_q[mask]  # (M, K, d)
+                    # out = self.groups[group_id-1][i](feat.reshape(-1, 50 * self.knn))
+
                     group_out.append(out)
 
                 output_cat = torch.cat(group_out, dim=-1)                     # (M, total_out_dim)
@@ -702,6 +1098,113 @@ class Spatial_CTX(nn.Module):
 #         super().__init__()
 
 #         self.MLP_d0 = nn.Sequential(
+#             nn.Linear(96, 5*3),
+#             nn.LeakyReLU(inplace=True),
+#             nn.Linear(5*3, 5*2),
+#         )
+
+#         self.MLP_d1 = nn.Sequential(
+#             nn.Linear(96, 5*3),
+#             nn.LeakyReLU(inplace=True),
+#             nn.Linear(5*3, 5*2),
+#         )
+#         self.MLP_d2 = nn.Sequential(
+#             nn.Linear(96, 40*3),
+#             nn.LeakyReLU(inplace=True),
+#             nn.Linear(40*3, 40*2),
+#         )
+#         # self.MLP_d3 = nn.Sequential(
+#         #     nn.Linear(96+20*2, 20*3),
+#         #     nn.LeakyReLU(inplace=True),
+#         #     nn.Linear(20*3, 20*2),
+#         # )
+
+#     def forward(self, hyper_prior, to_dec=-1):
+#         # fea_q: (nonanchor_num, knn, fea_num)
+#         if to_dec == -1:            
+#             mean_d0, scale_d0 = torch.chunk(self.MLP_d0(hyper_prior), chunks=2, dim=-1)
+#             mean_d1, scale_d1 = torch.chunk(self.MLP_d1(hyper_prior), chunks=2, dim=-1)
+#             mean_d2, scale_d2 = torch.chunk(self.MLP_d2(hyper_prior), chunks=2, dim=-1)
+#             # mean_d3, scale_d3 = torch.chunk(self.MLP_d3(torch.cat([hyper_prior, ch_ctx3], dim=-1)), chunks=2, dim=-1)
+        
+#             means = torch.cat([mean_d0, mean_d1, mean_d2], dim=-1)
+#             scales = torch.cat([scale_d0, scale_d1, scale_d2], dim=-1)
+            
+#             return means, scales
+
+
+class Param_Aggregation(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.MLP_d0 = nn.Sequential(
+            nn.Linear(96, 50*3),
+            nn.LeakyReLU(inplace=True),
+            nn.Linear(50*3, 50*2),
+        )
+
+    def forward(self, hyper_prior, to_dec=-1):
+        # fea_q: (nonanchor_num, knn, fea_num)
+        if to_dec == -1:            
+            means, scales = torch.chunk(self.MLP_d0(hyper_prior), chunks=2, dim=-1)
+
+            return means, scales
+        
+# class Param_Aggregation(nn.Module):
+#     def __init__(self):
+#         super().__init__()
+
+#         self.MLP_d0 = nn.Sequential(
+#             nn.Linear(96+5*2, 5*3),
+#             nn.LeakyReLU(inplace=True),
+#             nn.Linear(5*3, 5*2),
+#         )
+
+#         self.MLP_d1 = nn.Sequential(
+#             nn.Linear(96+5*2, 5*3),
+#             nn.LeakyReLU(inplace=True),
+#             nn.Linear(5*3, 5*2),
+#         )
+#         self.MLP_d2 = nn.Sequential(
+#             nn.Linear(96+40*2, 40*3),
+#             nn.LeakyReLU(inplace=True),
+#             nn.Linear(40*3, 40*2),
+#         )
+#         # self.MLP_d3 = nn.Sequential(
+#         #     nn.Linear(96+20*2, 20*3),
+#         #     nn.LeakyReLU(inplace=True),
+#         #     nn.Linear(20*3, 20*2),
+#         # )
+
+#     def forward(self, hyper_prior, ch_ctx, to_dec=-1):
+#         # fea_q: (nonanchor_num, knn, fea_num)
+#         if to_dec == -1:
+#             ch_ctx0, ch_ctx1, ch_ctx2 = torch.split(ch_ctx, split_size_or_sections=[5*2, 5*2, 40*2], dim=-1)
+#             # ch_ctx0, ch_ctx1 = torch.split(ch_ctx, split_size_or_sections=[5*2, 5*2], dim=-1)
+
+#             mean_d0, scale_d0 = torch.chunk(self.MLP_d0(torch.cat([hyper_prior, ch_ctx0], dim=-1)), chunks=2, dim=-1)
+#             mean_d1, scale_d1 = torch.chunk(self.MLP_d1(torch.cat([hyper_prior, ch_ctx1], dim=-1)), chunks=2, dim=-1)
+#             mean_d2, scale_d2 = torch.chunk(self.MLP_d2(torch.cat([hyper_prior, ch_ctx2], dim=-1)), chunks=2, dim=-1)
+#             # mean_d2, scale_d2 = torch.chunk(self.MLP_d2(hyper_prior), chunks=2, dim=-1)
+
+#             # mean_d3, scale_d3 = torch.chunk(self.MLP_d3(torch.cat([hyper_prior, ch_ctx3], dim=-1)), chunks=2, dim=-1)
+        
+#             means = torch.cat([mean_d0, mean_d1, mean_d2], dim=-1)
+#             scales = torch.cat([scale_d0, scale_d1, scale_d2], dim=-1)
+            
+#             return means, scales
+
+#         else:
+#             MLP = getattr(self, f"MLP_d{to_dec}")
+#             mean, scale = torch.chunk(MLP(torch.cat([hyper_prior, ch_ctx], dim=-1)), chunks=2, dim=-1)
+
+#             return mean, scale
+
+# class Param_Aggregation(nn.Module):
+#     def __init__(self):
+#         super().__init__()
+
+#         self.MLP_d0 = nn.Sequential(
 #             nn.Linear(96+5*2, 5*3),
 #             nn.LeakyReLU(inplace=True),
 #             nn.Linear(5*3, 5*2),
@@ -717,6 +1220,7 @@ class Spatial_CTX(nn.Module):
 #             nn.LeakyReLU(inplace=True),
 #             nn.Linear(15*3, 15*2),
 #         )
+
 #         self.MLP_d3 = nn.Sequential(
 #             nn.Linear(96+20*2, 20*3),
 #             nn.LeakyReLU(inplace=True),
@@ -727,7 +1231,7 @@ class Spatial_CTX(nn.Module):
 #         # fea_q: (nonanchor_num, knn, fea_num)
 #         if to_dec == -1:
 #             ch_ctx0, ch_ctx1, ch_ctx2, ch_ctx3 = torch.split(ch_ctx, split_size_or_sections=[5*2, 10*2, 15*2, 20*2], dim=-1)
-            
+
 #             mean_d0, scale_d0 = torch.chunk(self.MLP_d0(torch.cat([hyper_prior, ch_ctx0], dim=-1)), chunks=2, dim=-1)
 #             mean_d1, scale_d1 = torch.chunk(self.MLP_d1(torch.cat([hyper_prior, ch_ctx1], dim=-1)), chunks=2, dim=-1)
 #             mean_d2, scale_d2 = torch.chunk(self.MLP_d2(torch.cat([hyper_prior, ch_ctx2], dim=-1)), chunks=2, dim=-1)
@@ -744,95 +1248,434 @@ class Spatial_CTX(nn.Module):
 
 #             return mean, scale
 
-class Param_Aggregation(nn.Module):
-    def __init__(self, num_groups=3, base_input=16*3*2, dims=[5, 10, 15, 20]):
+
+# class Param_Aggregation(nn.Module):
+#     def __init__(self, dims=[5, 10, 15, 20]):
+#         super().__init__()
+
+#         self.dims = dims
+#         self.MLP_d0 = nn.Sequential(
+#             nn.Linear(96+5*2, 5*3),
+#             nn.LeakyReLU(inplace=True),
+#             nn.Linear(5*3, 5*2),
+#         )
+
+#         self.MLP_d1 = nn.Sequential(
+#             nn.Linear(96+15*2, 15*3),
+#             nn.LeakyReLU(inplace=True),
+#             nn.Linear(15*3, 15*2),
+#         )
+#         self.MLP_d2 = nn.Sequential(
+#             nn.Linear(96, 30*3),
+#             nn.LeakyReLU(inplace=True),
+#             nn.Linear(30*3, 30*2),
+#         )
+#         # self.MLP_d3 = nn.Sequential(
+#         #     nn.Linear(96+20*2, 20*3),
+#         #     nn.LeakyReLU(inplace=True),
+#         #     nn.Linear(20*3, 20*2),
+#         # )
+
+#     def forward(self, hyper_prior, sp_ctx, to_dec=-1):
+#         # fea_q: (nonanchor_num, knn, fea_num)
+#         if to_dec == -1:
+#             sp_chunks = torch.split(sp_ctx, split_size_or_sections=[d * 2 for d in self.dims[:2]], dim=-1)
+            
+#             mean_d0, scale_d0 = torch.chunk(self.MLP_d0(torch.cat([hyper_prior, sp_chunks[0]], dim=-1)), chunks=2, dim=-1)
+#             mean_d1, scale_d1 = torch.chunk(self.MLP_d1(torch.cat([hyper_prior, sp_chunks[1]], dim=-1)), chunks=2, dim=-1)
+#             mean_d2, scale_d2 = torch.chunk(self.MLP_d2(hyper_prior), chunks=2, dim=-1)
+#             # mean_d3, scale_d3 = torch.chunk(self.MLP_d3(torch.cat([hyper_prior, ch_ctx3], dim=-1)), chunks=2, dim=-1)
+        
+#             means = torch.cat([mean_d0, mean_d1, mean_d2], dim=-1)
+#             scales = torch.cat([scale_d0, scale_d1, scale_d2], dim=-1)
+            
+#             return means, scales
+
+#         # else:
+#         #     MLP = getattr(self, f"MLP_d{to_dec}")
+#         #     mean, scale = torch.chunk(MLP(torch.cat([hyper_prior, ch_ctx], dim=-1)), chunks=2, dim=-1)
+
+#         #     return mean, scale
+
+# class Param_Aggregation(nn.Module):
+#     def __init__(self, num_groups=3, base_input=16*3*2, dims=[5, 10, 15, 20]):
+#         super().__init__()
+
+#         self.num_groups = num_groups
+#         self.num_levels = len(dims)
+#         self.base_input = base_input
+#         self.dims = dims
+#         self.groups = nn.ModuleList()
+
+#         for g in range(num_groups):
+#             level_mlps = nn.ModuleList()
+
+#             for d, dim in enumerate(dims):
+#                 if g==0 or d>=2:
+#                     dim_factor = 2
+#                 else:
+#                     dim_factor = 4
+#                 input_dim = base_input + dim * dim_factor
+#                 hidden_dim = dim * 3
+#                 output_dim = dim * 2
+#                 mlp = nn.Sequential(
+#                     nn.Linear(input_dim, hidden_dim),
+#                     nn.LeakyReLU(inplace=True),
+#                     nn.Linear(hidden_dim, output_dim),
+#                 )
+#                 level_mlps.append(mlp)
+#             self.groups.append(level_mlps)
+
+#     def forward(self, hyper_prior=None, ch_ctx=None, sp_ctx=None, mask_list=[], choose_idx=None, ch_to_dec=-1, decoding=False, group_to_dec=-1):
+        
+#         B = hyper_prior.shape[0]
+#         device = hyper_prior.device
+#         dtype = hyper_prior.dtype
+    
+#         if ch_to_dec == -1:
+#             # if choose_idx is None:
+#             #     choose_idx = torch.ones(mask_list[0].shape[0], device=device, dtype=torch.bool)
+#             # 拆分 ch_ctx / sp_ctx 每层
+#             ch_chunks = torch.split(ch_ctx, [d * 2 for d in self.dims], dim=-1)
+#             sp_chunks = torch.split(sp_ctx, [d * 2 for d in self.dims[:2]], dim=-1)
+
+#             # 初始化输出 placeholder
+#             means = torch.zeros(B, sum([d for d in self.dims]), device=device, dtype=dtype)
+#             scales = torch.zeros_like(means)
+
+#             for group_id, mask in enumerate(mask_list):
+#                 if choose_idx is not None:
+#                     mask = mask[choose_idx]
+#                 if mask.sum() == 0:
+#                     continue  # 跳过该组无样本的情况
+
+#                 h = hyper_prior[mask]
+#                 group_means = []
+#                 group_scales = []
+
+#                 for level, dim in enumerate(self.dims):
+#                     ch = ch_chunks[level][mask]
+#                     if group_id==0 or level>=2:
+#                         x = torch.cat([h, ch], dim=-1)
+#                     else:
+#                         sp = sp_chunks[level][mask]
+#                         x = torch.cat([h, ch, sp], dim=-1)
+#                     mlp = self.groups[group_id][level]
+#                     mean, scale = torch.chunk(mlp(x), chunks=2, dim=-1)
+#                     group_means.append(mean)
+#                     group_scales.append(scale)
+
+#                 group_means = torch.cat(group_means, dim=-1)
+#                 group_scales = torch.cat(group_scales, dim=-1)
+
+#                 means[mask] = group_means
+#                 scales[mask] = group_scales
+
+#             return means, scales
+
+#         elif decoding and group_to_dec!=-1:
+#             # 单层模式
+#             if group_to_dec==0:
+#                 x = torch.cat([hyper_prior, ch_ctx], dim=-1)
+#             else:   
+#                 x = torch.cat([hyper_prior, ch_ctx, sp_ctx], dim=-1)
+#             mlp = self.groups[group_to_dec][ch_to_dec]
+#             means, scales = torch.chunk(mlp(x), chunks=2, dim=-1)
+#             return means, scales
+#         else:
+#             raise ValueError("Wrong input in Param_Aggregation")
+        
+# class Param_Aggregation(nn.Module):
+#     def __init__(self, num_groups=3, base_input=16*3*2, dims=[5, 10, 15, 20]):
+#         super().__init__()
+
+#         self.num_groups = num_groups
+#         self.num_levels = len(dims)
+#         self.base_input = base_input
+#         self.dims = dims
+#         self.groups = nn.ModuleList()
+
+#         for g in range(num_groups):
+#             level_mlps = nn.ModuleList()
+#             if g==0:
+#                 dim_factor = 2
+#             else:
+#                 dim_factor = 4
+#             for dim in dims:
+#                 input_dim = base_input + dim * dim_factor
+#                 hidden_dim = dim * 3
+#                 output_dim = dim * 2
+#                 mlp = nn.Sequential(
+#                     nn.Linear(input_dim, hidden_dim),
+#                     nn.LeakyReLU(inplace=True),
+#                     nn.Linear(hidden_dim, output_dim),
+#                 )
+#                 level_mlps.append(mlp)
+#             self.groups.append(level_mlps)
+
+
+#     def forward(self, hyper_prior=None, ch_ctx=None, sp_ctx=None, mask_list=[], choose_idx=None, ch_to_dec=-1, decoding=False, group_to_dec=-1):
+        
+#         B = hyper_prior.shape[0]
+#         device = hyper_prior.device
+#         dtype = hyper_prior.dtype
+    
+#         if ch_to_dec == -1:
+#             # if choose_idx is None:
+#             #     choose_idx = torch.ones(mask_list[0].shape[0], device=device, dtype=torch.bool)
+#             # 拆分 ch_ctx / sp_ctx 每层
+#             ch_chunks = torch.split(ch_ctx, [d * 2 for d in self.dims], dim=-1)
+#             sp_chunks = torch.split(sp_ctx, [d * 2 for d in self.dims], dim=-1)
+
+#             # 初始化输出 placeholder
+#             means = torch.zeros(B, sum([d for d in self.dims]), device=device, dtype=dtype)
+#             scales = torch.zeros_like(means)
+
+#             for group_id, mask in enumerate(mask_list):
+#                 if choose_idx is not None:
+#                     mask = mask[choose_idx]
+#                 if mask.sum() == 0:
+#                     continue  # 跳过该组无样本的情况
+
+#                 h = hyper_prior[mask]
+#                 group_means = []
+#                 group_scales = []
+
+#                 for level, dim in enumerate(self.dims):
+#                     ch = ch_chunks[level][mask]
+#                     if group_id==0:
+#                         x = torch.cat([h, ch], dim=-1)
+#                     else:
+#                         sp = sp_chunks[level][mask]
+#                         x = torch.cat([h, ch, sp], dim=-1)
+#                     mlp = self.groups[group_id][level]
+#                     mean, scale = torch.chunk(mlp(x), chunks=2, dim=-1)
+#                     group_means.append(mean)
+#                     group_scales.append(scale)
+
+#                 group_means = torch.cat(group_means, dim=-1)
+#                 group_scales = torch.cat(group_scales, dim=-1)
+
+#                 means[mask] = group_means
+#                 scales[mask] = group_scales
+
+#             return means, scales
+
+#         elif decoding and group_to_dec!=-1:
+#             # 单层模式
+#             if group_to_dec==0:
+#                 x = torch.cat([hyper_prior, ch_ctx], dim=-1)
+#             else:   
+#                 x = torch.cat([hyper_prior, ch_ctx, sp_ctx], dim=-1)
+#             mlp = self.groups[group_to_dec][ch_to_dec]
+#             means, scales = torch.chunk(mlp(x), chunks=2, dim=-1)
+#             return means, scales
+#         else:
+#             raise ValueError("Wrong input in Param_Aggregation")
+        
+class Feat_Q(nn.Module):
+    def __init__(self, num_groups=3, base_input=16*3*2):
         super().__init__()
 
         self.num_groups = num_groups
-        self.num_levels = len(dims)
+
         self.base_input = base_input
-        self.dims = dims
-        self.groups = nn.ModuleList()
 
-        for g in range(num_groups):
-            level_mlps = nn.ModuleList()
-            if g==0:
-                dim_factor = 2
-            else:
-                dim_factor = 4
-            for dim in dims:
-                input_dim = base_input + dim * dim_factor
-                hidden_dim = dim * 3
-                output_dim = dim * 2
-                mlp = nn.Sequential(
-                    nn.Linear(input_dim, hidden_dim),
-                    nn.LeakyReLU(inplace=True),
-                    nn.Linear(hidden_dim, output_dim),
-                )
-                level_mlps.append(mlp)
-            self.groups.append(level_mlps)
+        self.groups = nn.ModuleList([
 
+            nn.Linear(base_input, 1) 
 
-    def forward(self, hyper_prior=None, ch_ctx=None, sp_ctx=None, mask_list=[], choose_idx=None, ch_to_dec=-1, decoding=False, group_to_dec=-1):
-        
-        B = hyper_prior.shape[0]
-        device = hyper_prior.device
-        dtype = hyper_prior.dtype
+            for _ in range(num_groups)
+        ])
+
+    def forward(self, hyper_prior, mask_list):
+        if hyper_prior is not None:
+            B, _ = hyper_prior.shape
+            device = hyper_prior.device
+            dtype = hyper_prior.dtype
+        outputs = torch.zeros(B, 1, device=device, dtype=dtype)
+        for level, mask in enumerate(mask_list):
+            tmp_hyper = hyper_prior[mask]
+            output = self.groups[level](tmp_hyper)
+            outputs[mask] = output
+
+        return outputs
     
-        if ch_to_dec == -1:
-            # if choose_idx is None:
-            #     choose_idx = torch.ones(mask_list[0].shape[0], device=device, dtype=torch.bool)
-            # 拆分 ch_ctx / sp_ctx 每层
-            ch_chunks = torch.split(ch_ctx, [d * 2 for d in self.dims], dim=-1)
-            sp_chunks = torch.split(sp_ctx, [d * 2 for d in self.dims], dim=-1)
 
-            # 初始化输出 placeholder
-            means = torch.zeros(B, sum([d for d in self.dims]), device=device, dtype=dtype)
-            scales = torch.zeros_like(means)
+class MLP_OPACITY(nn.Module):
+    def __init__(self, base_feat_dim=10, bias_dim=4, n_offsets=10, input_dim=3+1+50):
+        super().__init__()
+        self.base_feat_dim = base_feat_dim
+        self.bias_opacity = bias_dim
+        self.n_offsets = n_offsets
+        self.input_dim = input_dim
 
-            for group_id, mask in enumerate(mask_list):
-                if choose_idx is not None:
-                    mask = mask[choose_idx]
-                if mask.sum() == 0:
-                    continue  # 跳过该组无样本的情况
-
-                h = hyper_prior[mask]
-                group_means = []
-                group_scales = []
-
-                for level, dim in enumerate(self.dims):
-                    ch = ch_chunks[level][mask]
-                    if group_id==0:
-                        x = torch.cat([h, ch], dim=-1)
-                    else:
-                        sp = sp_chunks[level][mask]
-                        x = torch.cat([h, ch, sp], dim=-1)
-                    mlp = self.groups[group_id][level]
-                    mean, scale = torch.chunk(mlp(x), chunks=2, dim=-1)
-                    group_means.append(mean)
-                    group_scales.append(scale)
-
-                group_means = torch.cat(group_means, dim=-1)
-                group_scales = torch.cat(group_scales, dim=-1)
-
-                means[mask] = group_means
-                scales[mask] = group_scales
-
-            return means, scales
-
-        elif decoding and group_to_dec!=-1:
-            # 单层模式
-            if group_to_dec==0:
-                x = torch.cat([hyper_prior, ch_ctx], dim=-1)
-            else:   
-                x = torch.cat([hyper_prior, ch_ctx, sp_ctx], dim=-1)
-            mlp = self.groups[group_to_dec][ch_to_dec]
-            means, scales = torch.chunk(mlp(x), chunks=2, dim=-1)
-            return means, scales
-        else:
-            raise ValueError("Wrong input in Param_Aggregation")
+        # self.base_opacity = nn.Sequential(
+        #     nn.Linear(3+1+base_feat_dim, base_feat_dim),
+        #     nn.ReLU(True),
+        #     nn.Linear(base_feat_dim, 1),
+        # ).cuda() 
         
-class GaussianModel(nn.Module):
+        # self.bias_opacity = nn.Sequential(
+        #     nn.Conv1d(in_channels=bias_dim*n_offsets, out_channels=bias_dim*n_offsets, kernel_size=1, groups=n_offsets),
+        #     nn.ReLU(True),
+        #     nn.Conv1d(in_channels=bias_dim*n_offsets, out_channels=n_offsets, kernel_size=1, groups=n_offsets),
+        # ).cuda()
+
+        # self.base_opacity = nn.Linear(3+1+base_feat_dim, 1).cuda() 
+        
+        # self.bias_opacity = nn.Conv1d(in_channels=bias_dim*n_offsets, out_channels=n_offsets, kernel_size=1, groups=n_offsets).cuda()
+
+        # self.opacity = nn.Sequential(
+        #     nn.Linear(3+1+50, 50),
+        #     nn.ReLU(True),
+        #     nn.Linear(50, 1*(n_offsets+1)),
+        # ).cuda()
+
+        self.base_opacity = nn.Sequential(
+            nn.Linear(3+1+base_feat_dim, base_feat_dim),
+            nn.ReLU(True),
+            nn.Linear(base_feat_dim, 1),
+        ).cuda() 
+
+        self.bias_opacity = nn.Sequential(
+            nn.Linear(50-base_feat_dim, 50-base_feat_dim),
+            nn.ReLU(True),
+            nn.Linear(50-base_feat_dim, 1*n_offsets),
+        ).cuda() 
+
+    def forward(self, input):
+        
+        # base_opacity = self.base_opacity(input[..., :3+1+self.base_feat_dim]).unsqueeze(1).repeat(1, self.n_offsets, 1).view(-1, self.n_offsets*1)
+        # bias_opacity = self.bias_opacity(input[..., 3+1+self.base_feat_dim:].unsqueeze(-1)).squeeze()
+
+        # opacity = self.opacity(input)
+        # base_opacity = opacity[..., :1].unsqueeze(1).repeat(1, self.n_offsets, 1).view(-1, self.n_offsets*1)
+        # bias_opacity = opacity[..., 1:]
+
+        base_opacity = self.base_opacity(input[..., :3+1+self.base_feat_dim]).unsqueeze(1).repeat(1, self.n_offsets, 1).view(-1, self.n_offsets*1)
+        bias_opacity = self.bias_opacity(input[..., 3+1+self.base_feat_dim:])
+
+        return torch.tanh(base_opacity+bias_opacity)
+    
+        # return torch.tanh(base_opacity)
+
+
+class MLP_COV(nn.Module):
+    def __init__(self, base_feat_dim=10, bias_dim=4, n_offsets=10, input_dim=3+1+50):
+        super().__init__()
+        self.base_feat_dim = base_feat_dim
+        self.bias_opacity = bias_dim
+        self.n_offsets = n_offsets
+        self.input_dim = input_dim
+
+        # self.base_cov = nn.Sequential(
+        #     nn.Linear(3+1+base_feat_dim, base_feat_dim),
+        #     nn.ReLU(True),
+        #     nn.Linear(base_feat_dim, 7),
+        # ).cuda()
+        
+        # self.bias_cov = nn.Sequential(
+        #     nn.Conv1d(in_channels=bias_dim*n_offsets, out_channels=bias_dim*n_offsets, kernel_size=1, groups=n_offsets),
+        #     nn.ReLU(True),
+        #     nn.Conv1d(in_channels=bias_dim*n_offsets, out_channels=7*n_offsets, kernel_size=1, groups=n_offsets),
+        # ).cuda()
+
+        # self.base_cov = nn.Linear(3+1+base_feat_dim, 7).cuda() 
+        
+        # self.bias_cov = nn.Conv1d(in_channels=bias_dim*n_offsets, out_channels=7*n_offsets, kernel_size=1, groups=n_offsets).cuda()
+        
+        # self.cov = nn.Sequential(
+        #     nn.Linear(3+1+50, 50),
+        #     nn.ReLU(True),
+        #     nn.Linear(50, 7*(n_offsets+1)),
+        # ).cuda()
+
+        self.base_cov = nn.Sequential(
+            nn.Linear(3+1+base_feat_dim, base_feat_dim),
+            nn.ReLU(True),
+            nn.Linear(base_feat_dim, 7),
+        ).cuda()
+
+        self.bias_cov = nn.Sequential(
+            nn.Linear(50-base_feat_dim, 50-base_feat_dim),
+            nn.ReLU(True),
+            nn.Linear(50-base_feat_dim, 7*n_offsets),
+        ).cuda()
+
+    def forward(self, input):
+        # base_cov = self.base_cov(input[..., :3+1+self.base_feat_dim]).unsqueeze(1).repeat(1, self.n_offsets, 1).view(-1, self.n_offsets*7)
+        # bias_cov = self.bias_cov(input[..., 3+1+self.base_feat_dim:].unsqueeze(-1)).squeeze()
+
+        # cov = self.cov(input)
+        # base_cov = cov[..., :7].unsqueeze(1).repeat(1, self.n_offsets, 1).view(-1, self.n_offsets*7)
+        # bias_cov = cov[..., 7:]
+
+        base_cov = self.base_cov(input[..., :3+1+self.base_feat_dim]).unsqueeze(1).repeat(1, self.n_offsets, 1).view(-1, self.n_offsets*7)
+        bias_cov = self.bias_cov(input[..., 3+1+self.base_feat_dim:])
+
+        return base_cov+bias_cov
+    
+        # return base_cov
+    
+class MLP_COLOR(nn.Module):
+    def __init__(self, base_feat_dim=10, bias_dim=4, n_offsets=10, input_dim=3+1+50):
+        super().__init__()
+        self.base_feat_dim = base_feat_dim
+        self.bias_opacity = bias_dim
+        self.n_offsets = n_offsets
+        self.input_dim = input_dim
+
+        # self.base_color = nn.Sequential(
+        #     nn.Linear(3+1+base_feat_dim, base_feat_dim),
+        #     nn.ReLU(True),
+        #     nn.Linear(base_feat_dim, 3)
+        # ).cuda()
+
+        # self.bias_color = nn.Sequential(
+        #     nn.Conv1d(in_channels=bias_dim*n_offsets, out_channels=bias_dim*n_offsets, kernel_size=1, groups=n_offsets),
+        #     nn.ReLU(True),
+        #     nn.Conv1d(in_channels=bias_dim*n_offsets, out_channels=3*n_offsets, kernel_size=1, groups=n_offsets),
+        # ).cuda()
+
+        # self.base_color = nn.Linear(3+1+base_feat_dim, 3).cuda() 
+        
+        # self.bias_color = nn.Conv1d(in_channels=bias_dim*n_offsets, out_channels=3*n_offsets, kernel_size=1, groups=n_offsets).cuda()
+        
+        # self.color = nn.Sequential(
+        #     nn.Linear(3+1+50, 50),
+        #     nn.ReLU(True),
+        #     nn.Linear(50, 3*(n_offsets+1))
+        # ).cuda()
+
+        self.base_color = nn.Sequential(
+            nn.Linear(3+1+base_feat_dim, base_feat_dim),
+            nn.ReLU(True),
+            nn.Linear(base_feat_dim, 3)
+        ).cuda()
+
+        self.bias_color = nn.Sequential(
+            nn.Linear(50-base_feat_dim, 50-base_feat_dim),
+            nn.ReLU(True),
+            nn.Linear(50-base_feat_dim, 3*n_offsets)
+        ).cuda()
+
+    def forward(self, input):
+        # base_color = self.base_color(input[..., :3+1+self.base_feat_dim]).unsqueeze(1).repeat(1, self.n_offsets, 1).view(-1, self.n_offsets*3)
+        # bias_color = self.bias_color(input[..., 3+1+self.base_feat_dim:].unsqueeze(-1)).squeeze()
+
+        # color = self.color(input)
+        # base_color = color[..., :3].unsqueeze(1).repeat(1, self.n_offsets, 1).view(-1, self.n_offsets*3)
+        # bias_color = color[..., 3:]
+
+        base_color = self.base_color(input[..., :3+1+self.base_feat_dim]).unsqueeze(1).repeat(1, self.n_offsets, 1).view(-1, self.n_offsets*3)
+        bias_color = self.bias_color(input[..., 3+1+self.base_feat_dim:])
+
+        return torch.sigmoid(base_color+bias_color)
+
+        # return torch.sigmoid(base_color)
+
+class GaussianModel(nn.Module): 
 
     def setup_functions(self):
         def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation):
@@ -940,15 +1783,7 @@ class GaussianModel(nn.Module):
         self.spatial_lr_scale = 0
         self.setup_functions()
         # self.ac_sp_use2D = True
-        if self.use_feat_bank:
-            self.mlp_feature_bank = nn.Sequential(
-                nn.Linear(3+1, feat_dim),
-                nn.ReLU(True),
-                nn.Linear(feat_dim, 3),
-                nn.Softmax(dim=1)
-            ).cuda()
 
-        mlp_input_feat_dim = feat_dim
 
         if self.use_2D:
             self.encoding_xyz = mix_3D2D_encoding(
@@ -983,35 +1818,57 @@ class GaussianModel(nn.Module):
         print(f'encoding_param_num={encoding_params_num}, size={encoding_MB}MB.')
         print("encoding xyz output dim:", self.encoding_xyz.output_dim)
 
+        if self.use_feat_bank:
+            self.mlp_feature_bank = nn.Sequential(
+                nn.Linear(3+1, feat_dim),
+                nn.ReLU(True),
+                nn.Linear(feat_dim, 3),
+                nn.Softmax(dim=1)
+            ).cuda()
 
-        self.mlp_opacity = nn.Sequential(
-            nn.Linear(mlp_input_feat_dim+3+1, feat_dim),
-            nn.ReLU(True),
-            nn.Linear(feat_dim, n_offsets),
-            nn.Tanh()
-        ).cuda()
+        mlp_input_feat_dim = feat_dim
 
-        self.mlp_cov = nn.Sequential(
-            nn.Linear(mlp_input_feat_dim+3+1, feat_dim),
-            nn.ReLU(True),
-            nn.Linear(feat_dim, 7*self.n_offsets),
-            # nn.Linear(feat_dim, 7),
-        ).cuda()
+        # self.mlp_opacity = nn.Sequential(
+        #     nn.Linear(mlp_input_feat_dim+3+1, feat_dim),
+        #     nn.ReLU(True),
+        #     nn.Linear(feat_dim, n_offsets),
+        #     nn.Tanh()
+        # ).cuda()
 
-        self.mlp_color = nn.Sequential(
-            nn.Linear(mlp_input_feat_dim+3+1, feat_dim),
-            nn.ReLU(True),
-            nn.Linear(feat_dim, 3*self.n_offsets),
-            nn.Sigmoid()
-        ).cuda()
+        # self.mlp_cov = nn.Sequential(
+        #     nn.Linear(mlp_input_feat_dim+3+1, feat_dim),
+        #     nn.ReLU(True),
+        #     nn.Linear(feat_dim, 7*self.n_offsets),
+        #     # nn.Linear(feat_dim, 7),
+        # ).cuda()
+
+        # self.mlp_color = nn.Sequential(
+        #     nn.Linear(mlp_input_feat_dim+3+1, feat_dim),
+        #     nn.ReLU(True),
+        #     nn.Linear(feat_dim, 3*self.n_offsets),
+        #     nn.Sigmoid()
+        # ).cuda()
 
 
         self.level_num = 2
+        self.knn_num = 2
+        # self.dims = [5, 10, 15, 20] 
+        self.dims = [5, 5, 40] 
+        self.base_feat_dim = 10
+        self.bias_dim = 4
+        
+
+
+        self.mlp_opacity = MLP_OPACITY(base_feat_dim=self.base_feat_dim, bias_dim=self.bias_dim, n_offsets=self.n_offsets, input_dim=3+1+self.feat_dim).cuda()
+        self.mlp_cov = MLP_COV(base_feat_dim=self.base_feat_dim, bias_dim=self.bias_dim, n_offsets=self.n_offsets, input_dim=3+1+self.feat_dim).cuda()
+        self.mlp_color = MLP_COLOR(base_feat_dim=self.base_feat_dim, bias_dim=self.bias_dim, n_offsets=self.n_offsets, input_dim=3+1+self.feat_dim).cuda()
+
+
 
         self.entropy_gaussian = Entropy_gaussian(Q=1).cuda()
         self.EG_mix_prob_2 = Entropy_gaussian_mix_prob_2(Q=1).cuda()
         self.EG_mix_prob_3 = Entropy_gaussian_mix_prob_3(Q=1).cuda()
-
+        
 
     def get_encoding_params(self):
         params = []
@@ -1127,6 +1984,13 @@ class GaussianModel(nn.Module):
         mask_anchor = ((mask_rate > 0.0).float() - mask_rate).detach() + mask_rate
         return mask_anchor  # [N, 1]
 
+    @property
+    def get_feat_mask(self):
+        if self.decoded_version:
+            return self.feat_mask
+        mask_sig = torch.sigmoid(self.feat_mask)
+        return ((mask_sig > 0.5).float() - mask_sig).detach() + mask_sig
+    
     @property
     def get_featurebank_mlp(self):
         return self.mlp_feature_bank
@@ -1264,6 +2128,8 @@ class GaussianModel(nn.Module):
         self._opacity = nn.Parameter(opacities.requires_grad_(False))
         self.max_radii2D = torch.zeros((self.get_anchor.shape[0]), device="cuda")
 
+        feat_mask = torch.randn((self.get_anchor.shape[0], 1)).float().cuda()  # 例如 size=(3, 4)
+        self.feat_mask = nn.Parameter(feat_mask.requires_grad_(True))
 
     def training_setup(self, training_args):
 
@@ -1292,6 +2158,8 @@ class GaussianModel(nn.Module):
                 {'params': self.mlp_cov.parameters(), 'lr': training_args.mlp_cov_lr_init, "name": "mlp_cov"},
                 {'params': self.mlp_color.parameters(), 'lr': training_args.mlp_color_lr_init, "name": "mlp_color"},
 
+                {'params': [self.feat_mask], 'lr': training_args.mask_lr_init * self.spatial_lr_scale, "name": "feat_mask"},
+
                 # {'params': self.encoding_xyz.parameters(), 'lr': self.training_args.encoding_xyz_lr_init, "name": "encoding_xyz"},
                 # {'params': self.mlp_grid.parameters(), 'lr': self.training_args.mlp_grid_lr_init, "name": "mlp_grid"},
 
@@ -1313,6 +2181,8 @@ class GaussianModel(nn.Module):
                 {'params': self.mlp_opacity.parameters(), 'lr': training_args.mlp_opacity_lr_init, "name": "mlp_opacity"},
                 {'params': self.mlp_cov.parameters(), 'lr': training_args.mlp_cov_lr_init, "name": "mlp_cov"},
                 {'params': self.mlp_color.parameters(), 'lr': training_args.mlp_color_lr_init, "name": "mlp_color"},
+
+                {'params': [self.feat_mask], 'lr': training_args.mask_lr_init * self.spatial_lr_scale, "name": "feat_mask"},
 
                 # {'params': self.encoding_xyz.parameters(), 'lr': self.training_args.encoding_xyz_lr_init, "name": "encoding_xyz"},
                 # {'params': self.mlp_grid.parameters(), 'lr': self.training_args.mlp_grid_lr_init, "name": "mlp_grid"},
@@ -1338,6 +2208,7 @@ class GaussianModel(nn.Module):
                                                     lr_delay_mult=training_args.mask_lr_delay_mult,
                                                     max_steps=training_args.mask_lr_max_steps)
 
+        
         self.mlp_opacity_scheduler_args = get_expon_lr_func(lr_init=training_args.mlp_opacity_lr_init,
                                                     lr_final=training_args.mlp_opacity_lr_final,
                                                     lr_delay_mult=training_args.mlp_opacity_lr_delay_mult,
@@ -1358,12 +2229,12 @@ class GaussianModel(nn.Module):
                                                         lr_delay_mult=training_args.mlp_featurebank_lr_delay_mult,
                                                         max_steps=training_args.mlp_featurebank_lr_max_steps)
 
-        self.encoding_xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.encoding_xyz_lr_init,
-                                                    lr_final=training_args.encoding_xyz_lr_final,
-                                                    lr_delay_mult=training_args.encoding_xyz_lr_delay_mult,
-                                                    max_steps=training_args.encoding_xyz_lr_max_steps,
-                                                             step_sub=0 if self.ste_binary else 10000,
-                                                             )
+        # self.encoding_xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.encoding_xyz_lr_init,
+        #                                             lr_final=training_args.encoding_xyz_lr_final,
+        #                                             lr_delay_mult=training_args.encoding_xyz_lr_delay_mult,
+        #                                             max_steps=training_args.encoding_xyz_lr_max_steps,
+        #                                                      step_sub=0 if self.ste_binary else 10000,
+        #                                                      )
         # self.mlp_grid_scheduler_args = get_expon_lr_func(lr_init=training_args.mlp_grid_lr_init,
         #                                             lr_final=training_args.mlp_grid_lr_final,
         #                                             lr_delay_mult=training_args.mlp_grid_lr_delay_mult,
@@ -1411,7 +2282,22 @@ class GaussianModel(nn.Module):
                                                     max_steps=training_args.mlp_feat_Q_lr_max_steps,
                                                          step_sub=0 if self.ste_binary else 15000,
                                                                )
-        
+        self.mlp_knn_scheduler_args = get_expon_lr_func(lr_init=training_args.mlp_knn_lr_init,
+                                                    lr_final=training_args.mlp_knn_lr_final,
+                                                    lr_delay_mult=training_args.mlp_knn_lr_delay_mult,
+                                                    max_steps=training_args.mlp_knn_lr_max_steps,
+                                                         step_sub=0 if self.ste_binary else 15000,
+                                                               )
+        self.mlp_feat_weight_scheduler_args = get_expon_lr_func(lr_init=training_args.mlp_feat_weight_lr_init,
+                                                    lr_final=training_args.mlp_feat_weight_lr_final,
+                                                    lr_delay_mult=training_args.mlp_feat_weight_lr_delay_mult,
+                                                    max_steps=training_args.mlp_feat_weight_lr_max_steps,
+                                                         step_sub=0 if self.ste_binary else 15000,
+                                                               )
+        self.feat_mask_scheduler_args = get_expon_lr_func(lr_init=training_args.mask_lr_init*self.spatial_lr_scale,
+                                                    lr_final=training_args.mask_lr_final*self.spatial_lr_scale,
+                                                    lr_delay_mult=training_args.mask_lr_delay_mult,
+                                                    max_steps=training_args.mask_lr_max_steps)
     def update_learning_rate(self, iteration):
         ''' Learning rate scheduling per step '''
         for param_group in self.optimizer.param_groups:
@@ -1458,6 +2344,16 @@ class GaussianModel(nn.Module):
                 param_group['lr'] = lr
             if param_group["name"] == "mlp_feat_Q":
                 lr = self.mlp_feat_Q_scheduler_args(iteration)
+                param_group['lr'] = lr
+            if param_group["name"] == "mlp_knn":
+                lr = self.mlp_knn_scheduler_args(iteration)
+                param_group['lr'] = lr
+            if param_group["name"] == "mlp_feat_weight":
+                lr = self.mlp_feat_weight_scheduler_args(iteration)
+                param_group['lr'] = lr
+
+            if param_group["name"] == "feat_mask":
+                lr = self.feat_mask_scheduler_args(iteration)
                 param_group['lr'] = lr
 
             # if param_group["name"] == "encoding_xyz":
@@ -1685,6 +2581,8 @@ class GaussianModel(nn.Module):
         self._scaling = optimizable_tensors["scaling"]
         self._rotation = optimizable_tensors["rotation"]
 
+        self.feat_mask = optimizable_tensors["feat_mask"]
+
     def order_preserving_transform(self, tensor):
         # 获取排序后的值和排序后的索引
         sorted_values, sorted_indices = torch.sort(tensor)
@@ -1744,6 +2642,8 @@ class GaussianModel(nn.Module):
 
         # return [level_0_indices, level_1_indices, level_2_indices, level_3_indices]
 
+        # level_0_sign = ((points[:, 0] % 2 == 0) & (points[:, 1] % 2 == 0) & (points[:, 2] % 2 == 0))
+        
         level_0_sign = (((points[:, 0] % 2 == 0) & (points[:, 1] % 2 == 0) & (points[:, 2] % 2 == 0))|
                         ((points[:, 0] % 2 == 0) & (points[:, 1] % 2 == 1) & (points[:, 2] % 2 == 1))|
                         ((points[:, 0] % 2 == 1) & (points[:, 1] % 2 == 0) & (points[:, 2] % 2 == 1))|
@@ -1751,7 +2651,17 @@ class GaussianModel(nn.Module):
                         )
         level_1_sign = ~level_0_sign
 
+
         level_signs = [level_0_sign, level_1_sign]
+
+
+        # ## test
+        # level_1_sign = ((points[:, 0] % 2 == 1) & (points[:, 1] % 2 == 0) & (points[:, 2] % 2 == 1))
+        # level_0_sign = ~level_1_sign
+
+        # level_signs = [level_0_sign, level_1_sign]
+
+
 
         # level_0_sign = (points[:, 0] % 2 == 1) & (points[:, 1] % 2 == 0) & (points[:, 2] % 2 == 1)
         # level_1_sign = ((points[:, 0] % 2 == 0) & (points[:, 1] % 2 == 0) & (points[:, 2] % 2 == 0)|
@@ -1822,14 +2732,95 @@ class GaussianModel(nn.Module):
 
             return level_indices
 
+    def get_levels(self, points=None):
+        # level_0_sign = (((points[:, 0] % 2 == 0) & (points[:, 1] % 2 == 0) & (points[:, 2] % 2 == 0))|
+        #                 ((points[:, 0] % 2 == 0) & (points[:, 1] % 2 == 1) & (points[:, 2] % 2 == 1))|
+        #                 ((points[:, 0] % 2 == 1) & (points[:, 1] % 2 == 0) & (points[:, 2] % 2 == 1))|
+        #                 ((points[:, 0] % 2 == 1) & (points[:, 1] % 2 == 1) & (points[:, 2] % 2 == 0))
+        #                 )
+        
+        # level_0_sign = (((points[:, 0] % 2 == 0) & (points[:, 1] % 2 == 0) & (points[:, 2] % 2 == 0))|
+        #                 ((points[:, 0] % 2 == 0) & (points[:, 1] % 2 == 1) & (points[:, 2] % 2 == 1))
+        #                 )
 
-    def faiss_knn(self, points, queries, knn_num=2, type='brute'):
+        level_0_sign = ((points[:, 0] % 2 == 0) & (points[:, 1] % 2 == 0) & (points[:, 2] % 2 == 0))
+
+        level_1_sign = ~level_0_sign
+
+        level_signs = [level_0_sign, level_1_sign]
+
+        level_indices = []
+        for sign in level_signs:
+            # 记录索引
+            indices = sign.nonzero(as_tuple=True)[0]
+            level_indices.append(indices)
+
+        return level_signs, level_indices
+
+    def set_masks(self, signs=None, valid_mask=None, reverse_indices=None):
+        level_masks = []
+        for sign in signs:
+            # 创建 mask(恢复原顺序)
+            mask = torch.zeros(self.get_anchor.shape[0], dtype=torch.bool, device='cuda')
+            reversed_sign = sign[reverse_indices]
+            mask[valid_mask] = reversed_sign
+            level_masks.append(mask)
+
+        for i, mask in enumerate(level_masks):
+            setattr(self, f'level_{i}_mask', mask)       
+
+    def masked_chamfer_cdist(self, A, B, mask_A, mask_B):
+        """
+        A:       (N, M, 3)
+        B:       (N, K, M, 3)
+        mask_A:  (N, M) bool
+        mask_B:  (N, K, M) bool
+        return:  chamfer (N, K)
+        """
+        N, M, _ = A.shape
+        _, K, _, _ = B.shape
+
+        # 展平 (N*K, M, 3)
+        A_rep = A[:, None, :, :].expand(-1, K, -1, -1).reshape(N*K, M, 3)  # 每个邻居配同一个A
+        B_flat = B.reshape(N*K, M, 3)
+        mask_A_rep = mask_A[:, None, :].expand(-1, K, -1).reshape(N*K, M)
+        mask_B_flat = mask_B.reshape(N*K, M)
+
+        # 计算 pairwise 距离平方: (N*K, M, M)
+        dist = torch.cdist(A_rep, B_flat, p=2) ** 2
+
+        # ---------- A->B ----------
+        # 屏蔽无效B点
+        dist_A2B = dist.masked_fill(~mask_B_flat[:, None, :], float('inf'))
+        min_A2B, _ = dist_A2B.min(dim=2)  # (N*K, M)
+        # 无效A点置0，不计入和
+        min_A2B = min_A2B.masked_fill(~mask_A_rep, 0.0)
+        sum_A2B = min_A2B.sum(dim=1)  # (N*K,)
+        count_A = mask_A_rep.sum(dim=1).clamp(min=1)  # (N*K,)
+        mean_A2B = sum_A2B / count_A
+
+        # # ---------- B->A ----------
+        # dist = dist.transpose(1, 2)
+        # dist_B2A = dist.masked_fill(~mask_A_rep[:, None, :], float('inf'))
+        # min_B2A, _ = dist_B2A.min(dim=2)  # (N*K, M) 每个B点到A的最小距离
+        # min_B2A = min_B2A.masked_fill(~mask_B_flat, 0.0)
+        # sum_B2A = min_B2A.sum(dim=1)
+        # count_B = mask_B_flat.sum(dim=1).clamp(min=1)
+        # mean_B2A = sum_B2A / count_B
+
+        # ---------- 合并 ----------
+        # chamfer_flat = mean_A2B + mean_B2A  # (N*K,)
+        chamfer_flat = mean_A2B
+        chamfer = chamfer_flat.view(N, K)   # (N,K)
+        return chamfer
+
+    def faiss_knn(self, points, queries, dim=3, knn_num=2, type='brute'):
         points = points.cpu().numpy()
         queries = queries.cpu().numpy()
 
         if type=='brute':
             # torch.cuda.synchronize(); t0 = time.time()
-            index = faiss.IndexFlatL2(3)  # 3D 欧几里得距离
+            index = faiss.IndexFlatL2(dim)  # 3D 欧几里得距离
             res = faiss.StandardGpuResources()
             gpu_index = faiss.index_cpu_to_gpu(res, 0, index)
             gpu_index.add(points)
@@ -1839,7 +2830,7 @@ class GaussianModel(nn.Module):
 
         elif type=='IVF':
             torch.cuda.synchronize(); t0 = time.time()
-            dim, measure = 3, faiss.METRIC_L2 
+            measure = faiss.METRIC_L2 
             description =  'IVF4096,Flat'
             index = faiss.index_factory(dim, description, measure)
             res = faiss.StandardGpuResources()
@@ -1855,7 +2846,7 @@ class GaussianModel(nn.Module):
         else:
             # HNSW
             torch.cuda.synchronize(); t0 = time.time()
-            dim, max_nodes, measure = 3, 64, faiss.METRIC_L2   
+            max_nodes, measure = 64, faiss.METRIC_L2   
             param =  'HNSW64' 
             # index = faiss.index_factory(dim, param, measure)
             index = faiss.IndexHNSWFlat(dim, max_nodes)
@@ -1890,7 +2881,688 @@ class GaussianModel(nn.Module):
                 knn_indices_list.append(indices)
 
         return knn_indices_list
+
+    def knn_update_12(self, knn=2, knn_range=20):
+        with torch.no_grad():
+            valid_mask = self.get_mask_anchor.to(torch.bool)[:, 0]
+            print("all num:", self.get_anchor.shape[0])
+            valid_anchor = self.get_anchor[valid_mask]
+            valid_coords = self.voxelize(valid_anchor)
+            valid_scaling = self.get_scaling[valid_mask]
+            valid_offsets = self._offset[valid_mask]    # (N, n_offsets, 3)
+            valid_offsets_mask = self.get_mask[valid_mask].to(torch.bool)[..., 0]   # (N, n_offsets) bool
+
+
+            valid_num = valid_mask.sum().item()
+            print("valid_num:", valid_num)
+            valid_indices = torch.arange(valid_num, device='cuda').long()
+            valid_indices_ori = valid_mask.nonzero(as_tuple=True)[0]
+            knn_indices = torch.zeros((self.get_anchor.shape[0], knn), dtype=torch.long).cuda()
+            
+            ## morton sort first(encoding、decoing order):
+            sorted_indices = calculate_morton_order(valid_coords)
+            reverse_indices = sorted_indices.argsort()
+            valid_indices_ori = valid_indices_ori[sorted_indices]
+            valid_coords = valid_coords[sorted_indices]
+            valid_anchor = valid_anchor[sorted_indices]
+            valid_scaling = valid_scaling[sorted_indices]
+            valid_offsets = valid_offsets[sorted_indices]
+            valid_offsets_mask = valid_offsets_mask[sorted_indices]
+
+            valid_anchor_repeat = repeat(valid_anchor, 'n (c) -> (n k) (c)', k=self.n_offsets)
+            valid_scaling_repeat = repeat(valid_scaling, 'n (c) -> (n k) (c)', k=self.n_offsets)
+            valid_xyz = (valid_offsets.view(-1, 3)*valid_scaling_repeat[:, :3] + valid_anchor_repeat).view(-1, self.n_offsets, 3)    # (N, n_offsets, 3)
+
+
+            position_lists = self.get_level_indices(valid_coords, valid_mask, reverse_indices)
+
+
+            for i, level_i in enumerate(position_lists):
+                print("level num:", i, level_i.shape[0])
+
+            decoded = None
+            for i in range(len(position_lists)):
+                level_i = position_lists[i]
+                if i==0:
+                    decoded = level_i
+                else:
+                    refer_pts = valid_coords[decoded]
+                    query_pts = valid_coords[level_i]
+                    refer_xyz = valid_xyz[decoded]
+                    query_xyz = valid_xyz[level_i]
+                    refer_offsets_mask = valid_offsets_mask[decoded]    
+                    query_offsets_mask = valid_offsets_mask[level_i]    # [n, n_offsets] bool
+
+                    _, dis_indices = self.faiss_knn(refer_pts, query_pts, knn_num=knn_range)  # [n, knn_range]
+
+                    # range search(combine distance and spatial correlation)
+                    refer_close_xyz = refer_xyz[dis_indices]   # [n, knn_range, n_offsets, 3]
+                    refer_close_n_offsets_mask = refer_offsets_mask[dis_indices] # [n, knn_range, n_offsets] bool
+                    chamfer_dist = self.masked_chamfer_cdist(query_xyz, refer_close_xyz, query_offsets_mask, refer_close_n_offsets_mask)  # [N, knn_range]
+                    _, feat_indices = torch.topk(chamfer_dist, k=knn, dim=1, largest=False)
+                    indices = torch.gather(dis_indices, dim=1, index=feat_indices)     # [N, knn]
+
+                    refer_knn_indices = decoded[indices]
+                    query_indices_ori = valid_indices_ori[level_i]
+                    knn_indices[query_indices_ori] = refer_knn_indices
+
+                    decoded = torch.cat([decoded, level_i])
+                    # decoded = level_i
+
+            self.knn_indices = knn_indices
+            self.refer_mask = valid_mask
+            self.morton_indices = sorted_indices
+
+            torch.cuda.empty_cache()
+
+    def knn_update_11(self, knn=2, percentile=0.8):
+        with torch.no_grad():
+            valid_mask = self.get_mask_anchor.to(torch.bool)[:, 0]
+            print("all num:", self.get_anchor.shape[0])
+            valid_anchor = self.get_anchor[valid_mask]
+            valid_feat = self._anchor_feat[valid_mask]
+            valid_coords = self.voxelize(valid_anchor)
+ 
+            valid_num = valid_mask.sum().item()
+            print("valid_num:", valid_num)
+            valid_indices = torch.arange(valid_num, device='cuda').long()
+            valid_indices_ori = valid_mask.nonzero(as_tuple=True)[0]
+            knn_indices = torch.zeros((self.get_anchor.shape[0], knn), dtype=torch.long).cuda()
+            
+            ## morton sort first(encoding、decoing order):
+            sorted_indices = calculate_morton_order(valid_coords)
+            reverse_indices = sorted_indices.argsort()
+            valid_indices_ori = valid_indices_ori[sorted_indices]
+            valid_coords = valid_coords[sorted_indices]
+            valid_anchor = valid_anchor[sorted_indices]
+            valid_feat = valid_feat[sorted_indices]
+
+            hyper_prior = self.query_triplane(valid_anchor)
+            Q_feat_adj = self.mlp_feat_Q(hyper_prior)
+            Q_feat_adj = Q_feat_adj.contiguous().repeat(1, 50)
+            Q_feat = 1
+            epsilon = 1e-9
+            Q_feat = Q_feat * (1 + torch.tanh(Q_feat_adj))+epsilon
+            valid_feat = quantize_ste(valid_feat/Q_feat)*Q_feat
+
+            level_signs, position_lists = self.get_levels(valid_coords)
+
+            level_sign_0 = torch.zeros(valid_num, dtype=torch.bool).cuda()
+
+            decoded = None
+            for i in range(len(position_lists)):
+                level_i = position_lists[i]
+                if i==0:
+                    decoded = level_i
+                else:
+                    refer_pts = valid_coords[decoded]
+                    query_pts = valid_coords[level_i]
+                    query_feat = valid_feat[level_i]
+                    query_num = level_i.shape[0]
+
+                    # level_sign_0 = level_signs[0]
+                    level_sign_i = level_signs[i]
+
+
+                    _, indices = self.faiss_knn(refer_pts, query_pts, knn_num=knn)
+
+                    refer_knn_indices = decoded[indices]
+                    query_indices_ori = valid_indices_ori[level_i]
+                    knn_indices[query_indices_ori] = refer_knn_indices
+
+                    query_feat = query_feat.unsqueeze(1)  # [N, k, C]
+                    refer_feat = valid_feat[refer_knn_indices]
+                    l2_distances = torch.norm(query_feat - refer_feat, dim=2)  # [N, k]
+                    mean_dist = l2_distances.mean(dim=1)  # [N]
+                    # max_dist = l2_distances.max(dim=1).values  # [N]
+
+                    # 排序（升序）
+                    _, mean_sorted_indices = torch.sort(mean_dist)
+                    # _, max_sorted_indices = torch.sort(max_dist)
+                    
+                    mean_sorted_indices = level_i[mean_sorted_indices]
+
+                    keep_num = int(query_num*percentile)
+                    mute_indices = mean_sorted_indices[keep_num:]
+                    level_sign_0[mute_indices] = True
+                    level_sign_i[mute_indices] = False
+
+                    level_signs[i] = level_sign_i
+
+
+                    decoded = torch.cat([decoded, level_i])
+                    # decoded = level_i
+
+            self.set_masks([level_sign_0]+level_signs, valid_mask, reverse_indices)
+            self.knn_indices = knn_indices
+            self.refer_mask = valid_mask
+            self.morton_indices = sorted_indices
+            # self.tmp_Q_feat_adj = tmp_Q_feat_adj
+
+    def knn_update_10(self, knn=2, iteration=4, percentile=0.6):
+        with torch.no_grad():
+            valid_mask = self.get_mask_anchor.to(torch.bool)[:, 0]
+            print("all num:", self.get_anchor.shape[0])
+            valid_anchor = self.get_anchor[valid_mask]
+            valid_feat = self._anchor_feat[valid_mask]
+            valid_coords = self.voxelize(valid_anchor)
+
+
+            valid_num = valid_mask.sum().item()
+            print("valid_num:", valid_num)
+            valid_indices = torch.arange(valid_num, device='cuda').long()
+            valid_indices_ori = valid_mask.nonzero(as_tuple=True)[0]
+            knn_indices = np.zeros((self.get_anchor.shape[0], knn), dtype=np.int64)  # 循环访问
+
+            ## morton sort first(encoding、decoing order):
+            sorted_indices = calculate_morton_order(valid_coords)
+            reverse_indices = sorted_indices.argsort()
+            valid_indices_ori = valid_indices_ori[sorted_indices].cpu().numpy()  # 循环访问
+            valid_coords = valid_coords[sorted_indices]
+            valid_anchor = valid_anchor[sorted_indices]
+            valid_feat = valid_feat[sorted_indices]
+
+            hyper_prior = self.query_triplane(valid_anchor)
+            Q_feat_adj = self.mlp_feat_Q(hyper_prior)
+            Q_feat_adj = Q_feat_adj.contiguous().repeat(1, 50)
+            Q_feat = 1
+            epsilon = 1e-9
+            Q_feat = Q_feat * (1 + torch.tanh(Q_feat_adj))+epsilon
+            valid_feat = quantize_ste(valid_feat/Q_feat)*Q_feat
+
+            query_mask = np.zeros(valid_feat.shape[0], dtype=bool)
+            refer_mask = np.zeros(valid_feat.shape[0], dtype=bool)
+
+            for i in range(iteration):
+                
+                tmp_query_mask = ~(query_mask&refer_mask)
+                tmp_query_indices = torch.from_numpy(np.where(tmp_query_mask)[0]).cuda()
+                if tmp_query_indices.shape[0] < 1:
+                    break      
+                # tmp_refer_mask = ~query_mask
+                tmp_refer_mask = tmp_query_mask
+                tmp_refer_indices = torch.from_numpy(np.where(tmp_refer_mask)[0]).cuda()
+
+                tmp_query_coords = valid_coords[tmp_query_indices]
+                tmp_refer_coords = valid_coords[tmp_refer_indices]
+
+                _, tmp_knn_indices = self.faiss_knn(tmp_refer_coords, tmp_query_coords, knn_num=knn+1)
+                tmp_knn_indices = tmp_knn_indices[..., 1:]
+                tmp_knn_indices = tmp_refer_indices[tmp_knn_indices]
+                
+                tmp_query_feat = valid_feat[tmp_query_indices].unsqueeze(1)  # [N, k, C]
+                tmp_refer_feat = valid_feat[tmp_knn_indices]
+                l2_distances = torch.norm(tmp_query_feat - tmp_refer_feat, dim=2)  # [N, k]
+                mean_dist = l2_distances.mean(dim=1)  # [N]
+                # max_dist = l2_distances.max(dim=1).values  # [N]
+
+                # 排序（升序）
+                _, mean_sorted_indices = torch.sort(mean_dist)
+                # _, max_sorted_indices = torch.sort(max_dist)
+
+
+                mean_sorted_indices = mean_sorted_indices.cpu().numpy()
+                tmp_knn_indices = tmp_knn_indices.cpu().numpy()
+
+
+                target_query_num = int(tmp_query_indices.shape[0]*percentile)
+
+                for q_idx in mean_sorted_indices[:target_query_num]:
+
+                    r_1_idx, r_2_idx = tmp_knn_indices[q_idx]
+
+                    if refer_mask[q_idx] or query_mask[r_1_idx] or query_mask[r_2_idx]:
+                        continue
+                    
+                    query_mask[q_idx] = True
+                    refer_mask[r_1_idx] = True
+                    refer_mask[r_2_idx] = True
+
+                    q_idx_ori = valid_indices_ori[q_idx]
+                    knn_indices[q_idx_ori] = [r_1_idx, r_2_idx]
+
+            refer_mask = ~query_mask
+
+            refer_mask =  torch.from_numpy(refer_mask).cuda()
+            query_mask = torch.from_numpy(query_mask).cuda()
+
+            self.set_masks([refer_mask, query_mask], valid_mask, reverse_indices)
+
+            self.knn_indices = torch.from_numpy(knn_indices).long().cuda()
+            self.refer_mask = valid_mask
+            self.morton_indices = sorted_indices
+
+
+    def knn_update_9(self, knn=2, knn_range=20):
+        with torch.no_grad():
+            valid_mask = self.get_mask_anchor.to(torch.bool)[:, 0]
+            print("all num:", self.get_anchor.shape[0])
+            valid_anchor = self.get_anchor[valid_mask]
+            valid_feat = self._anchor_feat[valid_mask]
+            valid_coords = self.voxelize(valid_anchor)
+            valid_scaling = self.get_scaling[valid_mask]
+
+            valid_num = valid_mask.sum().item()
+            print("valid_num:", valid_num)
+            valid_indices = torch.arange(valid_num, device='cuda').long()
+            valid_indices_ori = valid_mask.nonzero(as_tuple=True)[0]
+            knn_indices = torch.zeros((self.get_anchor.shape[0], knn), dtype=torch.long).cuda()
+            
+            ## morton sort first(encoding、decoing order):
+            sorted_indices = calculate_morton_order(valid_coords)
+            reverse_indices = sorted_indices.argsort()
+            valid_indices_ori = valid_indices_ori[sorted_indices]
+            valid_coords = valid_coords[sorted_indices]
+            valid_anchor = valid_anchor[sorted_indices]
+            valid_feat = valid_feat[sorted_indices]
+            valid_scaling = valid_scaling[sorted_indices]
+
+            hyper_prior = self.query_triplane(valid_anchor)
+            position_lists = self.get_level_indices(valid_coords, valid_mask, reverse_indices)
+            # Q_feat_adj = self.mlp_feat_Q.forward(hyper_prior, position_lists)
+            Q_feat_adj = self.mlp_feat_Q(hyper_prior)
+
+            Q_feat_adj = Q_feat_adj.contiguous().repeat(1, 50)
+            Q_feat = 1
+            epsilon = 1e-9
+            Q_feat = Q_feat * (1 + torch.tanh(Q_feat_adj))+epsilon
+            valid_feat = quantize_ste(valid_feat/Q_feat)*Q_feat
+
+
+            for i, level_i in enumerate(position_lists):
+                print("level num:", i, level_i.shape[0])
+
+            decoded = None
+            for i in range(len(position_lists)):
+                level_i = position_lists[i]
+                if i==0:
+                    decoded = level_i
+                else:
+                    refer_pts = valid_coords[decoded]
+                    query_pts = valid_coords[level_i]
+                    refer_feat = valid_feat[decoded][..., :10]
+                    query_feat = valid_feat[level_i][..., :10]
+
+                    _, dis_indices = self.faiss_knn(refer_pts, query_pts, knn_num=knn_range)  # [N, knn_range]
+
+                    # indices_2 = dis_indices[..., :knn]
+
+                    # range search(combine distance and spatial correlation)
+                    refer_close_feat = refer_feat[dis_indices]   # [N, knn_range, C]
+                    query_feat_expanded = query_feat.unsqueeze(1)  # [N, 1, C]
+                    dist = torch.norm(query_feat_expanded - refer_close_feat, dim=-1)  # [N, knn_range]
+                    _, feat_indices = torch.topk(dist, k=knn, dim=1, largest=False)
+                    indices_1 = torch.gather(dis_indices, dim=1, index=feat_indices)     # [N, knn]
+                    
+                    # indices = torch.cat([indices_1, indices_2], dim=1)
+
+                    indices = indices_1
+
+                    refer_knn_indices = decoded[indices]
+                    query_indices_ori = valid_indices_ori[level_i]
+                    knn_indices[query_indices_ori] = refer_knn_indices
+
+
+                    decoded = torch.cat([decoded, level_i])
+                    # decoded = level_i
+
+            self.knn_indices = knn_indices
+            self.refer_mask = valid_mask
+            self.morton_indices = sorted_indices
+
+
+    def knn_update_8(self, knn=2):
+        with torch.no_grad():
+            valid_mask = self.get_mask_anchor.to(torch.bool)[:, 0]
+            print("all num:", self.get_anchor.shape[0])
+            valid_anchor = self.get_anchor[valid_mask]
+            valid_feat = self._anchor_feat[valid_mask]
+            valid_coords = self.voxelize(valid_anchor)
+ 
+
+            valid_num = valid_mask.sum().item()
+            print("valid_num:", valid_num)
+            valid_indices = torch.arange(valid_num, device='cuda').long()
+            valid_indices_ori = valid_mask.nonzero(as_tuple=True)[0]
+            knn_indices = torch.zeros((self.get_anchor.shape[0], knn), dtype=torch.long).cuda()
+            
+            ## morton sort first(encoding、decoing order):
+            sorted_indices = calculate_morton_order(valid_coords)
+            valid_indices_ori = valid_indices_ori[sorted_indices]
+            valid_coords = valid_coords[sorted_indices]
+            valid_anchor = valid_anchor[sorted_indices]
+
+            _, indices = self.faiss_knn(valid_coords, valid_coords, knn_num=knn+1)
+            indices = indices[..., 1:]
+
+            knn_indices[valid_indices_ori] = indices
+
+
+            self.knn_indices = knn_indices
+            self.refer_mask = valid_mask
+            self.morton_indices = sorted_indices
+
+    def knn_update_7(self, knn=2, knn_range=20):
+        with torch.no_grad():
+            valid_mask = self.get_mask_anchor.to(torch.bool)[:, 0]
+            print("all num:", self.get_anchor.shape[0])
+            valid_anchor = self.get_anchor[valid_mask]
+            valid_feat = self._anchor_feat[valid_mask]
+            valid_coords = self.voxelize(valid_anchor)
+            valid_scaling = self.get_scaling[valid_mask]
+
+            valid_num = valid_mask.sum().item()
+            print("valid_num:", valid_num)
+            valid_indices = torch.arange(valid_num, device='cuda').long()
+            valid_indices_ori = valid_mask.nonzero(as_tuple=True)[0]
+            knn_indices = torch.zeros((self.get_anchor.shape[0], knn), dtype=torch.long).cuda()
+            
+            ## morton sort first(encoding、decoing order):
+            sorted_indices = calculate_morton_order(valid_coords)
+            reverse_indices = sorted_indices.argsort()
+            valid_indices_ori = valid_indices_ori[sorted_indices]
+            valid_coords = valid_coords[sorted_indices]
+            valid_anchor = valid_anchor[sorted_indices]
+            valid_feat = valid_feat[sorted_indices]
+            valid_scaling = valid_scaling[sorted_indices]
+
+            position_lists = self.get_level_indices(valid_coords, valid_mask, reverse_indices)
+
+
+            # knn compress
+            refer_knn = torch.zeros((self.get_anchor.shape[0], knn), dtype=torch.float32).cuda()
+            query_order = torch.zeros((self.get_anchor.shape[0], 1), dtype=torch.float32).cuda()
+
+            scaling_knn = torch.zeros((self.get_anchor.shape[0], knn), dtype=torch.float32).cuda()
+
+            for i, level_i in enumerate(position_lists):
+                print("level num:", i, level_i.shape[0])
+
+            decoded = None
+            for i in range(len(position_lists)):
+                level_i = position_lists[i]
+                if i==0:
+                    decoded = level_i
+                else:
+                    refer_pts = valid_coords[decoded]
+                    query_pts = valid_coords[level_i]
+                    refer_scaling = valid_scaling[decoded]
+                    query_scaling = valid_scaling[level_i]
+
+                    _, dis_indices = self.faiss_knn(refer_pts, query_pts, knn_num=knn_range)  # [N, knn_range]
+
+
+                    # range search(combine distance and spatial correlation)
+                    refer_close_scaling = refer_scaling[dis_indices]   # [N, knn_range, 6]
+                    query_scaling_expanded = query_scaling.unsqueeze(1)  # [N, 1, 6]
+                    dist = torch.norm(query_scaling_expanded - refer_close_scaling, dim=-1)  # [N, knn_range]
+                    _, scaling_indices = torch.topk(dist, k=knn, dim=1, largest=False)
+                    indices = torch.gather(dis_indices, dim=1, index=scaling_indices)     # [N, knn]
+
+
+                    refer_knn_indices = decoded[indices]
+                    query_indices_ori = valid_indices_ori[level_i]
+                    knn_indices[query_indices_ori] = refer_knn_indices
+
+                    # knn compress
+                    query_num = level_i.shape[0]
+                    refer_knn[query_indices_ori, :] = indices.float()
+                    query_order[query_indices_ori, 0] = torch.arange(query_num, device='cuda').float()
+
+                    scaling_knn[query_indices_ori] = scaling_indices.float()
+
+                    decoded = torch.cat([decoded, level_i])
+                    # decoded = level_i
+
+            self.knn_indices = knn_indices
+            self.refer_mask = valid_mask
+            self.morton_indices = sorted_indices
+
+            self.refer_knn = refer_knn
+            self.query_order = query_order
+
+            self.scaling_knn = scaling_knn
+
+    def knn_update_6(self, knn=2, knn_range=20):
+        with torch.no_grad():
+            valid_mask = self.get_mask_anchor.to(torch.bool)[:, 0]
+            print("all num:", self.get_anchor.shape[0])
+            valid_anchor = self.get_anchor[valid_mask]
+            valid_feat = self._anchor_feat[valid_mask]
+            valid_coords = self.voxelize(valid_anchor)
+            valid_scaling = self.get_scaling[valid_mask]
+
+            valid_num = valid_mask.sum().item()
+            print("valid_num:", valid_num)
+            valid_indices = torch.arange(valid_num, device='cuda').long()
+            valid_indices_ori = valid_mask.nonzero(as_tuple=True)[0]
+            knn_indices = torch.zeros((self.get_anchor.shape[0], knn), dtype=torch.long).cuda()
+            
+            ## morton sort first(encoding、decoing order):
+            sorted_indices = calculate_morton_order(valid_coords)
+            reverse_indices = sorted_indices.argsort()
+            valid_indices_ori = valid_indices_ori[sorted_indices]
+            valid_coords = valid_coords[sorted_indices]
+            valid_anchor = valid_anchor[sorted_indices]
+            valid_feat = valid_feat[sorted_indices]
+            valid_scaling = valid_scaling[sorted_indices]
+
+            hyper_prior = self.query_triplane(valid_anchor)
+            position_lists = self.get_level_indices(valid_coords, valid_mask, reverse_indices)
+            # Q_feat_adj = self.mlp_feat_Q.forward(hyper_prior, position_lists)
+            Q_feat_adj = self.mlp_feat_Q(hyper_prior)
+
+            Q_feat_adj = Q_feat_adj.contiguous().repeat(1, 50)
+            Q_feat = 1
+            epsilon = 1e-9
+            Q_feat = Q_feat * (1 + torch.tanh(Q_feat_adj))+epsilon
+            valid_feat = quantize_ste(valid_feat/Q_feat)*Q_feat
+
+            # knn compress
+            refer_knn = torch.zeros((self.get_anchor.shape[0], knn), dtype=torch.float32).cuda()
+            query_order = torch.zeros((self.get_anchor.shape[0], 1), dtype=torch.float32).cuda()
+
+            feat_knn = torch.zeros((self.get_anchor.shape[0], knn), dtype=torch.float32).cuda()
+
+            for i, level_i in enumerate(position_lists):
+                print("level num:", i, level_i.shape[0])
+
+            decoded = None
+            for i in range(len(position_lists)):
+                level_i = position_lists[i]
+                if i==0:
+                    decoded = level_i
+                else:
+                    refer_pts = valid_coords[decoded]
+                    query_pts = valid_coords[level_i]
+                    refer_feat = valid_feat[decoded][..., :5]
+                    query_feat = valid_feat[level_i][..., :5]
+
+                    _, dis_indices = self.faiss_knn(refer_pts, query_pts, knn_num=knn_range)  # [N, knn_range]
+
+
+                    # range search(combine distance and spatial correlation)
+                    refer_close_feat = refer_feat[dis_indices]   # [N, knn_range, C]
+                    query_feat_expanded = query_feat.unsqueeze(1)  # [N, 1, C]
+                    dist = torch.norm(query_feat_expanded - refer_close_feat, dim=-1)  # [N, knn_range]
+                    _, feat_indices = torch.topk(dist, k=knn, dim=1, largest=False)
+                    indices = torch.gather(dis_indices, dim=1, index=feat_indices)     # [N, knn]
+
+                    refer_knn_indices = decoded[indices]
+                    query_indices_ori = valid_indices_ori[level_i]
+                    knn_indices[query_indices_ori] = refer_knn_indices
+
+                    # knn compress
+                    query_num = level_i.shape[0]
+                    refer_knn[query_indices_ori, :] = indices.float()
+                    query_order[query_indices_ori, 0] = torch.arange(query_num, device='cuda').float()
+
+                    feat_knn[query_indices_ori] = feat_indices.float()
+
+                    decoded = torch.cat([decoded, level_i])
+                    # decoded = level_i
+
+            self.knn_indices = knn_indices
+            self.refer_mask = valid_mask
+            self.morton_indices = sorted_indices
+
+            self.refer_knn = refer_knn
+            self.query_order = query_order
+
+            self.feat_knn = feat_knn
+
+    def knn_update_5(self, knn=2):
+        with torch.no_grad():
+            valid_mask = self.get_mask_anchor.to(torch.bool)[:, 0]
+            print("all num:", self.get_anchor.shape[0])
+            valid_anchor = self.get_anchor[valid_mask]
+            valid_feat = self._anchor_feat[valid_mask]
+            valid_coords = self.voxelize(valid_anchor)
+ 
+
+            valid_num = valid_mask.sum().item()
+            print("valid_num:", valid_num)
+            valid_indices = torch.arange(valid_num, device='cuda').long()
+            valid_indices_ori = valid_mask.nonzero(as_tuple=True)[0]
+            knn_indices = torch.zeros((self.get_anchor.shape[0], knn), dtype=torch.long).cuda()
+            
+            ## morton sort first(encoding、decoing order):
+            sorted_indices = calculate_morton_order(valid_coords)
+            reverse_indices = sorted_indices.argsort()
+            valid_indices_ori = valid_indices_ori[sorted_indices]
+            valid_coords = valid_coords[sorted_indices]
+            valid_anchor = valid_anchor[sorted_indices]
+            valid_feat = valid_feat[sorted_indices]
+
+            hyper_prior = self.query_triplane(valid_anchor)
+            position_lists = self.get_level_indices(valid_coords, valid_mask, reverse_indices)
+            # Q_feat_adj = self.mlp_feat_Q.forward(hyper_prior, position_lists)
+            Q_feat_adj = self.mlp_feat_Q(hyper_prior)
+            Q_feat_adj = Q_feat_adj.contiguous().repeat(1, 50)
+            Q_feat = 1
+            epsilon = 1e-9
+            Q_feat = Q_feat * (1 + torch.tanh(Q_feat_adj))+epsilon
+            valid_feat = quantize_ste(valid_feat/Q_feat)*Q_feat
+
+            # knn compress
+            refer_knn = torch.zeros((self.get_anchor.shape[0], knn), dtype=torch.float32).cuda()
+            query_order = torch.zeros((self.get_anchor.shape[0], 1), dtype=torch.float32).cuda()
+
+            for i, level_i in enumerate(position_lists):
+                print("level num:", i, level_i.shape[0])
+
+            decoded = None
+            for i in range(len(position_lists)):
+                level_i = position_lists[i]
+                if i==0:
+                    decoded = level_i
+                else:
+                    refer_pts = valid_coords[decoded]
+                    query_pts = valid_coords[level_i]
+                    
+                    _, indices = self.faiss_knn(refer_pts, query_pts, knn)
+
+                    refer_knn_indices = decoded[indices]
+                    query_indices_ori = valid_indices_ori[level_i]
+                    knn_indices[query_indices_ori] = refer_knn_indices
+
+                    # knn compress
+                    query_num = level_i.shape[0]
+                    refer_knn[query_indices_ori, :] = indices.float()
+                    query_order[query_indices_ori, 0] = torch.arange(query_num, device='cuda').float()
+
+
+                    decoded = torch.cat([decoded, level_i])
+                    # decoded = level_i
+
+            self.knn_indices = knn_indices
+            self.refer_mask = valid_mask
+            self.morton_indices = sorted_indices
+
+            self.refer_knn = refer_knn
+            self.query_order = query_order
+
+    def update_Q_feat_adj(self, Q_feat_adj, choose_idx):
+        with torch.no_grad():
+            self.tmp_Q_feat_adj[choose_idx, :] = Q_feat_adj.detach()
+
+    def analyze_tensors_vectorized(self, A: torch.Tensor, B: torch.Tensor):
+        # 找到 A 中哪些元素在 B 中
+        in_B_mask = torch.isin(A, B)
+        idx_in_A_common = torch.nonzero(in_B_mask).squeeze()
+        common_values = A[idx_in_A_common]
+
+        # 在 B 中建立值到索引的映射
+        # 适用于元素唯一的情况（前提条件）
+        B_sorted, B_sorted_idx = torch.sort(B)
+        pos_in_B_sorted = torch.searchsorted(B_sorted, common_values)
+        idx_in_B_common = B_sorted_idx[pos_in_B_sorted]
+
+        # 找 A 中不在 B 的元素及索引
+        not_in_B_mask = ~in_B_mask
+        idx_in_A_minus_B = torch.nonzero(not_in_B_mask).squeeze()
+        A_minus_B = A[idx_in_A_minus_B]
+
+        return common_values, idx_in_A_common, idx_in_B_common, A_minus_B, idx_in_A_minus_B
     
+
+    def knn_update_4(self, knn=2):
+        with torch.no_grad():
+            valid_mask = self.get_mask_anchor.to(torch.bool)[:, 0]
+            print("all num:", self.get_anchor.shape[0])
+            valid_anchor = self.get_anchor[valid_mask]
+            valid_feat = self._anchor_feat[valid_mask]
+            valid_coords = self.voxelize(valid_anchor)
+ 
+
+            valid_num = valid_mask.sum().item()
+            print("valid_num:", valid_num)
+            valid_indices = torch.arange(valid_num, device='cuda').long()
+            valid_indices_ori = valid_mask.nonzero(as_tuple=True)[0]
+            knn_indices = torch.zeros((self.get_anchor.shape[0], knn), dtype=torch.long).cuda()
+            
+            ## morton sort first(encoding、decoing order):
+            sorted_indices = calculate_morton_order(valid_coords)
+            reverse_indices = sorted_indices.argsort()
+            valid_indices_ori = valid_indices_ori[sorted_indices]
+            valid_coords = valid_coords[sorted_indices]
+            valid_anchor = valid_anchor[sorted_indices]
+            valid_feat = valid_feat[sorted_indices]
+
+            hyper_prior = self.query_triplane(valid_anchor)
+            position_lists = self.get_level_indices(valid_coords, valid_mask, reverse_indices)
+            # Q_feat_adj = self.mlp_feat_Q.forward(hyper_prior, position_lists)
+            # Q_feat_adj = self.mlp_feat_Q(hyper_prior)
+            # Q_feat_adj = self.mlp_feat_Q(valid_anchor)
+
+            for i, level_i in enumerate(position_lists):
+                print("level num:", i, level_i.shape[0])
+
+            # tmp_Q_feat_adj = torch.zeros((self.get_anchor.shape[0], 1), dtype=torch.float32).cuda()
+            # tmp_Q_feat_adj[valid_mask] = Q_feat_adj[reverse_indices].detach()
+
+            decoded = None
+            for i in range(len(position_lists)):
+                level_i = position_lists[i]
+                if i==0:
+                    decoded = level_i
+                else:
+                    refer_pts = valid_coords[decoded]
+                    query_pts = valid_coords[level_i]
+                    
+                    _, indices = self.faiss_knn(refer_pts, query_pts, knn_num=knn)
+
+                    refer_knn_indices = decoded[indices]
+                    query_indices_ori = valid_indices_ori[level_i]
+                    knn_indices[query_indices_ori] = refer_knn_indices
+
+                    decoded = torch.cat([decoded, level_i])
+                    # decoded = level_i
+
+            self.knn_indices = knn_indices
+            self.refer_mask = valid_mask
+            self.morton_indices = sorted_indices
+            # self.tmp_Q_feat_adj = tmp_Q_feat_adj
 
     def knn_update_3(self, knn=2):
         with torch.no_grad():
@@ -1932,7 +3604,8 @@ class GaussianModel(nn.Module):
 
                     decoded = torch.cat([decoded, level_i])
                     # decoded = level_i
-
+                    print(query_pts[:20])
+                    print(refer_pts[indices][:20])
             self.knn_indices = knn_indices
             self.refer_mask = valid_mask
             self.morton_indices = sorted_indices
@@ -2486,7 +4159,7 @@ class GaussianModel(nn.Module):
         #     nn.Linear(50*2, 50*2),
         # ).cuda()
 
-        self.mlp_spatial = Spatial_CTX(num_groups=self.level_num, knn=2).cuda()
+        self.mlp_spatial = Spatial_CTX(num_groups=self.level_num, knn=self.knn_num, dims=self.dims).cuda()
         # self.mlp_spatial = Spatial_CTX().cuda()
         # self.mlp_spatial =  Spatial_CTX_fea_knn_tiny().cuda()
         nac_sp_params = {'params': self.mlp_spatial.parameters(), 'lr': self.training_args.mlp_spatial_lr_init, "name": "mlp_spatial"}
@@ -2499,8 +4172,8 @@ class GaussianModel(nn.Module):
         # self.optimizer_feat_sp = torch.optim.Adam(feat_sp_l, lr=0.0, eps=1e-15)
     def ch_config(self):
         if not self.is_synthetic_nerf:
-            # self.mlp_deform = Channel_CTX().cuda()
-            self.mlp_deform = Channel_CTX(num_groups=self.level_num).cuda()
+            # self.mlp_deform = Channel_CTX(num_groups=self.level_num, dims=self.dims).cuda()
+            self.mlp_deform = Channel_CTX().cuda()
         else:
             print('find synthetic nerf, use Channel_CTX_fea_tiny')
             self.mlp_deform = Channel_CTX_fea_tiny().cuda()
@@ -2508,19 +4181,64 @@ class GaussianModel(nn.Module):
         self.optimizer.add_param_group(ch_params)
 
     def param_config(self):
-        self.mlp_param_aggregation = Param_Aggregation(num_groups=self.level_num).cuda()
+        # self.mlp_param_aggregation = Param_Aggregation(num_groups=self.level_num, dims=self.dims).cuda()
+        self.mlp_param_aggregation = Param_Aggregation().cuda()
+
         param_params = {'params': self.mlp_param_aggregation.parameters(), 'lr': self.training_args.mlp_param_lr_init, "name": "mlp_param"}
         self.optimizer.add_param_group(param_params)
 
-    def encoding_xyz_config(self):
-
-        # self.mlp_grid = nn.Sequential(
-        #     nn.Linear(self.encoding_xyz.output_dim, self.feat_dim*2),
+    def feat_q_config(self):
+        self.mlp_feat_Q = nn.Linear(16*3*2, 1).cuda()
+        # self.mlp_feat_Q = nn.Sequential(
+        #     nn.Linear(3, 100),
         #     nn.ReLU(True),
-        #     nn.Linear(self.feat_dim*2, (self.feat_dim+6+3*self.n_offsets)*2+1+1+1),
+        #     nn.Linear(100, 1)
+        # ).cuda()
+        # self.mlp_feat_Q = nn.Sequential(
+        #     nn.Linear(16*3*2, 50),
+        #     nn.ReLU(True),
+        #     nn.Linear(50, self.base_feat_dim+self.bias_dim)
         # ).cuda()
 
-        self.mlp_grid = nn.Linear(self.encoding_xyz.output_dim, self.feat_dim*2).cuda()
+        # self.mlp_feat_Q = Feat_Q(num_groups=self.level_num).cuda()
+        feat_Q_params = {'params': self.mlp_feat_Q.parameters(), 'lr': self.training_args.mlp_feat_Q_lr_init, "name": "mlp_feat_Q"}
+        self.optimizer.add_param_group(feat_Q_params)
+
+    def mlp_knn_config(self):
+        self.mlp_knn = nn.Sequential(
+            nn.Linear(3+96, 100),
+            nn.ReLU(True),
+            nn.Linear(100, 2)
+        ).cuda()
+        knn_params = {'params': self.mlp_knn.parameters(), 'lr': self.training_args.mlp_knn_lr_init, "name": "mlp_knn"}
+        self.optimizer.add_param_group(knn_params)
+
+    def feat_weight_config(self):
+        self.mlp_feat_weight = nn.Sequential(
+            nn.Linear(96, 100),
+            nn.ReLU(True),
+            nn.Linear(100, self.knn_num)
+        ).cuda()
+        feat_weight_params = {'params': self.mlp_feat_weight.parameters(), 'lr': self.training_args.mlp_feat_weight_lr_init, "name": "mlp_feat_weight"}
+        self.optimizer.add_param_group(feat_weight_params)
+
+    def feat_mask_config(self):
+        
+        feat_mask = torch.randn((self.get_anchor.shape[0], 1)).float().cuda()  # 例如 size=(3, 4)
+        self.feat_mask = nn.Parameter(feat_mask.requires_grad_(True))
+        feat_mask_params = {'params': [self.feat_mask], 'lr': self.training_args.mask_lr_init * self.spatial_lr_scale, "name": "feat_mask"}
+        self.optimizer.add_param_group(feat_mask_params)
+
+
+    def encoding_xyz_config(self):
+
+        self.mlp_grid = nn.Sequential(
+            nn.Linear(self.encoding_xyz.output_dim, self.feat_dim*2),
+            nn.ReLU(True),
+            nn.Linear(self.feat_dim*2, 6*2),
+        ).cuda()
+
+        # self.mlp_grid = nn.Linear(self.encoding_xyz.output_dim, self.feat_dim*2).cuda()
 
         encoding_xyz_params = {'params': self.encoding_xyz.parameters(), 'lr': self.training_args.encoding_xyz_lr_init, "name": "encoding_xyz"}
         mlp_grid_params = {'params': self.mlp_grid.parameters(), 'lr': self.training_args.mlp_grid_lr_init, "name": "mlp_grid"}
@@ -2620,14 +4338,11 @@ class GaussianModel(nn.Module):
             nn.Linear(self.feat_dim*2, (6+3*self.n_offsets)*2+1+1),
         ).cuda()
 
-        self.mlp_feat_Q = nn.Linear(16*3*2, 1).cuda()
-
         triplanes_params = {'params': self.triplanes , 'lr': triplane_lr, "name": "triplanes"}
         VM_params = {'params': self.mlp_VM.parameters(), 'lr': self.training_args.mlp_VM_lr_init, "name": "mlp_VM"}
-        feat_Q_params =  {'params': self.mlp_feat_Q.parameters(), 'lr': self.training_args.mlp_feat_Q_lr_init, "name": "mlp_feat_Q"}
         self.optimizer.add_param_group(triplanes_params)
         self.optimizer.add_param_group(VM_params)
-        self.optimizer.add_param_group(feat_Q_params)
+
         
         # triplane_l = [
         #     {'params': self.triplanes , 'lr': triplane_lr, "name": "triplanes"},
@@ -2725,7 +4440,7 @@ class GaussianModel(nn.Module):
 
                 new_offsets = torch.zeros_like(candidate_anchor).unsqueeze(dim=1).repeat([1, self.n_offsets, 1]).float().cuda()
                 new_masks = torch.ones_like(candidate_anchor[:, 0:1]).unsqueeze(dim=1).repeat([1, self.n_offsets+1, 1]).float().cuda()
-
+                new_feat_mask = torch.rand_like(candidate_anchor[:, 0:1]).float().cuda()
                 d = {
                     "anchor": candidate_anchor,
                     "scaling": new_scaling,
@@ -2734,6 +4449,7 @@ class GaussianModel(nn.Module):
                     "offset": new_offsets,
                     "mask": new_masks,
                     "opacity": new_opacities,
+                    "feat_mask": new_feat_mask,
                 }
 
                 temp_anchor_demon = torch.cat([self.anchor_demon, torch.zeros([new_opacities.shape[0], 1], device='cuda').float()], dim=0)
@@ -2754,6 +4470,8 @@ class GaussianModel(nn.Module):
                 self._offset = optimizable_tensors["offset"]
                 self._mask = optimizable_tensors["mask"]
                 self._opacity = optimizable_tensors["opacity"]
+                self.feat_mask = optimizable_tensors["feat_mask"]
+                
 
     def adjust_anchor(self, check_interval=100, success_threshold=0.8, grad_threshold=0.0002, min_opacity=0.005):
         # # adding anchors
@@ -2985,13 +4703,15 @@ class GaussianModel(nn.Module):
         # mean_adj, scale_adj, prob_adj = self.get_deform_mlp.forward(_feat)
         # mean_adj, scale_adj, prob_adj = self.get_deform_mlp.forward(_feat, torch.cat([mean, scale, prob], dim=-1).contiguous())
 
-        # ch_ctx = self.get_deform_mlp.forward(_feat)
+
 
         _feat = (STE_multistep.apply(_feat, Q_feat)).detach()
         grid_scaling = (STE_multistep.apply(_scaling, Q_scaling)).detach()
         offsets = (STE_multistep.apply(_grid_offsets, Q_offsets.unsqueeze(1))).detach()
         offsets = offsets.view(-1, 3*self.n_offsets) 
         mask_tmp = _mask.repeat(1, 1, 3).view(-1, 3*self.n_offsets)
+
+        # ch_ctx = self.get_deform_mlp.forward(_feat)
 
 
         # nac_valid_mask = mask_anchor[~self.spatial_anchor_sign]
